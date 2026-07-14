@@ -116,6 +116,55 @@ if (baitPurchaseQuantity % 100 !== 0) {
     throw new Error('ARCANE_BAIT_PURCHASE_QUANTITY 必须是 100 的倍数。');
 }
 
+const activeMinMinutes = readInteger(
+    'ARCANE_ACTIVE_MIN_MINUTES',
+    40,
+    { min: 1, max: 1_440 },
+);
+const activeMaxMinutes = readInteger(
+    'ARCANE_ACTIVE_MAX_MINUTES',
+    70,
+    { min: 1, max: 1_440 },
+);
+
+if (activeMinMinutes > activeMaxMinutes) {
+    throw new Error(
+        'ARCANE_ACTIVE_MIN_MINUTES 不能大于 ARCANE_ACTIVE_MAX_MINUTES。',
+    );
+}
+
+const restMinMinutes = readInteger(
+    'ARCANE_REST_MIN_MINUTES',
+    5,
+    { min: 1, max: 1_440 },
+);
+const restMaxMinutes = readInteger(
+    'ARCANE_REST_MAX_MINUTES',
+    15,
+    { min: 1, max: 1_440 },
+);
+
+if (restMinMinutes > restMaxMinutes) {
+    throw new Error(
+        'ARCANE_REST_MIN_MINUTES 不能大于 ARCANE_REST_MAX_MINUTES。',
+    );
+}
+
+const quietStartHour = readInteger(
+    'ARCANE_QUIET_START_HOUR',
+    0,
+    { max: 23 },
+);
+const quietEndHour = readInteger(
+    'ARCANE_QUIET_END_HOUR',
+    8,
+    { max: 23 },
+);
+
+if (quietStartHour === quietEndHour) {
+    throw new Error('夜间停挂机的开始和结束小时不能相同。');
+}
+
 const targetUrl = readString(
     'ARCANE_URL',
     'https://arcaneangler.com/',
@@ -148,6 +197,12 @@ export const config = Object.freeze({
         30_000,
         { min: 5_000, max: 3_600_000 },
     ),
+    activeMinMinutes,
+    activeMaxMinutes,
+    restMinMinutes,
+    restMaxMinutes,
+    quietStartHour,
+    quietEndHour,
     autoVerify: readBoolean('ARCANE_AUTO_VERIFY', true),
     enforceClassicMode: readBoolean(
         'ARCANE_ENFORCE_CLASSIC_MODE',

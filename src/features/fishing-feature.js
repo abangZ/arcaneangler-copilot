@@ -100,7 +100,7 @@ export class FishingFeature {
                 await isVisible(castButton) &&
                 await castButton.isEnabled()
             ) {
-                await castButton.click();
+                await this.session.trustedClick(castButton);
                 this.lastProgressAt = Date.now();
                 await this.reporter.incrementCast();
 

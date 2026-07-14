@@ -48,6 +48,10 @@ export async function waitUntil(
                 return;
             }
         } catch (error) {
+            if (error.name === 'AutomationPausedError') {
+                throw error;
+            }
+
             lastError = error;
         }
 

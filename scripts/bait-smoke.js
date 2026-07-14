@@ -45,6 +45,7 @@ try {
             equippedBaitId: 'bait_default',
             events: [],
             purchaseClicks: 0,
+            trustedClicks: [],
             stocks: {
                 bait_1_low: 0,
                 bait_1_high: 0,
@@ -80,6 +81,12 @@ try {
         const activateSidebar = index => {
             sidebar.forEach((button, buttonIndex) => {
                 button.classList.toggle('border-l-4', buttonIndex === index);
+            });
+        };
+        const recordTrustedClick = (name, event) => {
+            window.baitSmoke.trustedClicks.push({
+                name,
+                trusted: event.isTrusted,
             });
         };
 
@@ -131,7 +138,8 @@ try {
                     button.disabled = button.dataset.buy === 'bait_1_high' ||
                         Number(input.value) < 1;
                 });
-                button.addEventListener('click', async () => {
+                button.addEventListener('click', async event => {
+                    recordTrustedClick(`buy:${button.dataset.buy}`, event);
                     window.baitSmoke.purchaseClicks += 1;
 
                     if (!button.classList.contains('bg-red-600')) {
@@ -149,7 +157,8 @@ try {
             });
 
             view.querySelectorAll('[data-equip]').forEach(button => {
-                button.addEventListener('click', async () => {
+                button.addEventListener('click', async event => {
+                    recordTrustedClick(`equip:${button.dataset.equip}`, event);
                     await fetch('https://game.test/api/game/equip-bait', {
                         method: 'POST',
                     });
@@ -170,15 +179,20 @@ try {
             ].join('');
             document.getElementById('bait-tab').addEventListener(
                 'click',
-                renderBaits,
+                event => {
+                    recordTrustedClick('tab:baits', event);
+                    renderBaits();
+                },
             );
         };
 
-        sidebar[0].addEventListener('click', () => {
+        sidebar[0].addEventListener('click', event => {
+            recordTrustedClick('sidebar:fishing', event);
             activateSidebar(0);
             renderFishing();
         });
-        sidebar[4].addEventListener('click', () => {
+        sidebar[4].addEventListener('click', event => {
+            recordTrustedClick('sidebar:equipment', event);
             activateSidebar(4);
             renderEquipment();
         });
@@ -186,7 +200,8 @@ try {
 
         document.getElementById('reward-close').addEventListener(
             'click',
-            () => {
+            event => {
+                recordTrustedClick('reward:close', event);
                 window.baitSmoke.events.push('reward:close');
                 document.getElementById('reward-modal').remove();
             },
@@ -204,6 +219,7 @@ try {
             document.getElementById('reward-claim').addEventListener(
                 'click',
                 event => {
+                    recordTrustedClick('reward:claim', event);
                     window.baitSmoke.events.push('reward:claim');
                     event.currentTarget.remove();
                 },
@@ -211,10 +227,12 @@ try {
         }, 80);
     });
 
+    let automationAllowed = true;
     const session = new ArcaneAnglerPage({
         page,
         reporter,
         shouldStop: () => false,
+        canAutomate: () => automationAllowed,
         config: {
             artifactsDir,
             navigationTimeoutMs: 2_000,
@@ -258,6 +276,15 @@ try {
     assert.equal(result.equippedBaitId, 'bait_1_low');
     assert.equal(result.events.at(-1), 'equip:bait_1_low');
     assert.equal(result.fishingActive, true);
+    const trustedClicks = await page.evaluate(() =>
+        window.baitSmoke.trustedClicks,
+    );
+
+    assert.ok(trustedClicks.length > 0, '测试必须实际触发页面点击');
+    assert.ok(
+        trustedClicks.every(event => event.trusted),
+        '所有生产页面点击都必须产生可信事件',
+    );
     assert.equal(await feature.tick(settingsSnapshot), false);
     assert.equal(
         await page.evaluate(() => window.baitSmoke.purchaseClicks),
@@ -276,6 +303,19 @@ try {
         { purchased: false, reason: 'insufficient-funds' },
     );
     await session.openFishingPage();
+
+    const trustedClickCount = await page.evaluate(() =>
+        window.baitSmoke.trustedClicks.length,
+    );
+    automationAllowed = false;
+    await assert.rejects(
+        () => session.navigateToSidebarPage('equipment'),
+        error => error.code === 'AUTOMATION_SCHEDULE_PAUSED',
+    );
+    assert.equal(
+        await page.evaluate(() => window.baitSmoke.trustedClicks.length),
+        trustedClickCount,
+    );
 
     console.log(
         'Bait smoke passed: reward priority, two-step purchase, stock, equip, interval and insufficient funds work.',

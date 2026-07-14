@@ -17,6 +17,42 @@ let engine = null;
 let panel = null;
 let stopRequested = false;
 
+function configurePage(page) {
+    page.setDefaultTimeout(config.navigationTimeoutMs);
+    page.setDefaultNavigationTimeout(config.navigationTimeoutMs);
+    page.on('pageerror', error => {
+        console.log(
+            `[${new Date().toISOString()}] 页面脚本异常：${error.message}`,
+        );
+    });
+}
+
+async function launchBrowser() {
+    const nextContext = await chromium.launchPersistentContext(
+        config.userDataDir,
+        {
+            headless: config.headless,
+            viewport: {
+                width: 1280,
+                height: 900,
+            },
+            locale: 'en-US',
+            args: ['--disable-dev-shm-usage'],
+        },
+    );
+
+    if (stopRequested) {
+        await nextContext.close().catch(() => {});
+        throw new Error('程序停止期间取消创建浏览器。');
+    }
+
+    context = nextContext;
+    const page = context.pages()[0] || await context.newPage();
+
+    configurePage(page);
+    return page;
+}
+
 async function close(signal) {
     if (stopRequested) {
         return;
@@ -26,9 +62,10 @@ async function close(signal) {
     await engine?.stop(signal);
     panel?.stop();
 
-    if (context) {
-        await context.close().catch(() => {});
-    }
+    const currentContext = context;
+
+    context = null;
+    await currentContext?.close().catch(() => {});
 }
 
 async function main() {
@@ -38,25 +75,7 @@ async function main() {
     const settings = await RuntimeSettings.load(config);
     const reporter = new StatusReporter();
 
-    context = await chromium.launchPersistentContext(config.userDataDir, {
-        headless: config.headless,
-        viewport: {
-            width: 1280,
-            height: 900,
-        },
-        locale: 'en-US',
-        args: ['--disable-dev-shm-usage'],
-    });
-
-    const page = context.pages()[0] || await context.newPage();
-
-    page.setDefaultTimeout(config.navigationTimeoutMs);
-    page.setDefaultNavigationTimeout(config.navigationTimeoutMs);
-    page.on('pageerror', error => {
-        console.log(
-            `[${new Date().toISOString()}] 页面脚本异常：${error.message}`,
-        );
-    });
+    const page = await launchBrowser();
 
     panel = new CopilotPanel({ page, settings, reporter });
     await panel.start();
@@ -66,13 +85,47 @@ async function main() {
         config,
         reporter,
         shouldStop: () => stopRequested || engine?.isStopping() || false,
+        canAutomate: () => engine?.isOperationAllowed() || false,
     });
+
+    const browserLifecycle = {
+        async suspend() {
+            panel?.stop();
+            panel = null;
+
+            const currentContext = context;
+
+            context = null;
+            await currentContext?.close().catch(() => {});
+        },
+        async resume() {
+            try {
+                const resumedPage = await launchBrowser();
+                const resumedPanel = new CopilotPanel({
+                    page: resumedPage,
+                    settings,
+                    reporter,
+                });
+
+                session.replacePage(resumedPage);
+                await resumedPanel.start();
+                panel = resumedPanel;
+            } catch (error) {
+                const currentContext = context;
+
+                context = null;
+                await currentContext?.close().catch(() => {});
+                throw error;
+            }
+        },
+    };
 
     engine = new AutomationEngine({
         config,
         settings,
         reporter,
         session,
+        browserLifecycle,
     });
 
     engine.register(new VerificationFeature({
@@ -113,7 +166,8 @@ main()
     .finally(async () => {
         panel?.stop();
 
-        if (context) {
-            await context.close().catch(() => {});
-        }
+        const currentContext = context;
+
+        context = null;
+        await currentContext?.close().catch(() => {});
     });

@@ -2,16 +2,24 @@
 Description=Arcane Angler Copilot
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
 
 [Service]
 Type=simple
 User=arcaneangler
-WorkingDirectory=/opt/tampermonkey-scripts/arcaneangler-copilot
+WorkingDirectory=/opt/arcaneangler-copilot
 ExecStart=/usr/bin/pnpm start
 Restart=always
 RestartSec=10
 TimeoutStopSec=30
+KillSignal=SIGTERM
+UMask=0077
 Environment=NODE_ENV=production
+# Schedule hours use this timezone. Adjust it to the server's local timezone.
+Environment=TZ=Asia/Shanghai
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

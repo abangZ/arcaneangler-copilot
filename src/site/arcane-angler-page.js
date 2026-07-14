@@ -8,6 +8,7 @@ import {
     sleep,
     waitUntil,
 } from '../core/browser-utils.js';
+import { AutomationPausedError } from '../core/operation-scheduler.js';
 
 function randomFloat(min, max) {
     return Math.random() * (max - min) + min;
@@ -25,12 +26,39 @@ function cubicBezier(start, control1, control2, end, progress) {
 }
 
 export class ArcaneAnglerPage {
-    constructor({ page, config, reporter, shouldStop }) {
+    constructor({
+        page,
+        config,
+        reporter,
+        shouldStop,
+        canAutomate = () => true,
+    }) {
         this.page = page;
         this.config = config;
         this.reporter = reporter;
         this.shouldStop = shouldStop;
+        this.canAutomate = canAutomate;
         this.pointerPosition = { x: 640, y: 450 };
+    }
+
+    assertAutomationAllowed() {
+        if (!this.canAutomate()) {
+            throw new AutomationPausedError();
+        }
+    }
+
+    isClosed() {
+        return this.page.isClosed();
+    }
+
+    replacePage(page) {
+        this.page = page;
+        this.pointerPosition = { x: 640, y: 450 };
+    }
+
+    async trustedClick(locator, options) {
+        this.assertAutomationAllowed();
+        await locator.click(options);
     }
 
     async captureScreenshot(reason) {
@@ -198,7 +226,7 @@ export class ArcaneAnglerPage {
                 ? `正在选择角色：${this.config.character}`
                 : '正在选择第一个角色。',
         });
-        await actionButton.click();
+        await this.trustedClick(actionButton);
 
         await waitUntil(() => this.isGameShellVisible(), {
             timeoutMs: this.config.navigationTimeoutMs,
@@ -235,7 +263,7 @@ export class ArcaneAnglerPage {
                 return false;
             }
 
-            await entryButton.click();
+            await this.trustedClick(entryButton);
             return true;
         }, {
             timeoutMs: this.config.navigationTimeoutMs,
@@ -270,7 +298,9 @@ export class ArcaneAnglerPage {
             message: `正在登录账号：${this.config.username}`,
         });
 
+        this.assertAutomationAllowed();
         await usernameInput.fill(this.config.username);
+        this.assertAutomationAllowed();
         await passwordInput.fill(this.config.password);
 
         const loginResponsePromise = this.page.waitForResponse(response => {
@@ -285,7 +315,13 @@ export class ArcaneAnglerPage {
             timeout: this.config.navigationTimeoutMs,
         });
 
-        await submitButton.click();
+        try {
+            await this.trustedClick(submitButton);
+        } catch (error) {
+            void loginResponsePromise.catch(() => {});
+            throw error;
+        }
+
         const loginResponse = await loginResponsePromise;
 
         if (!loginResponse.ok()) {
@@ -397,7 +433,7 @@ export class ArcaneAnglerPage {
                     target: '领取每日登录奖励',
                     message: '检测到可领取的每日奖励，正在优先领取。',
                 });
-                await claimButton.click();
+                await this.trustedClick(claimButton);
                 await waitUntil(async () =>
                     !(await isVisible(claimButton)) ||
                     !(await claimButton.isEnabled()), {
@@ -427,8 +463,13 @@ export class ArcaneAnglerPage {
         );
 
         if (closeButton) {
-            await closeButton.click({ timeout: 5_000 }).catch(async error => {
-                if (await isVisible(modal)) {
+            await this.trustedClick(closeButton, {
+                timeout: 5_000,
+            }).catch(async error => {
+                if (
+                    error instanceof AutomationPausedError ||
+                    await isVisible(modal)
+                ) {
                     throw error;
                 }
             });
@@ -457,8 +498,13 @@ export class ArcaneAnglerPage {
         );
 
         if (modalCloseButton) {
-            await modalCloseButton.click({ timeout: 5_000 }).catch(async error => {
-                if (await isVisible(modalCloseButton)) {
+            await this.trustedClick(modalCloseButton, {
+                timeout: 5_000,
+            }).catch(async error => {
+                if (
+                    error instanceof AutomationPausedError ||
+                    await isVisible(modalCloseButton)
+                ) {
                     throw error;
                 }
             });
@@ -480,8 +526,13 @@ export class ArcaneAnglerPage {
             ) || await firstVisible(tutorial.locator('button'));
 
             if (skipButton) {
-                await skipButton.click({ timeout: 5_000 }).catch(async error => {
-                    if (await isVisible(tutorial)) {
+                await this.trustedClick(skipButton, {
+                    timeout: 5_000,
+                }).catch(async error => {
+                    if (
+                        error instanceof AutomationPausedError ||
+                        await isVisible(tutorial)
+                    ) {
                         throw error;
                     }
                 });
@@ -517,7 +568,7 @@ export class ArcaneAnglerPage {
             throw new Error(`找不到侧栏 ${destination} 按钮。`);
         }
 
-        await button.click();
+        await this.trustedClick(button);
     }
 
     async openFishingPage() {
@@ -584,7 +635,7 @@ export class ArcaneAnglerPage {
             message: 'Equipment 页面中找不到鱼饵标签',
             shouldStop: this.shouldStop,
         });
-        await tabs.nth(1).click();
+        await this.trustedClick(tabs.nth(1));
         await waitUntil(async () => {
             const cards = this.getBaitCards();
             return await cards.count() > 0 && await isVisible(cards.first());
@@ -675,8 +726,10 @@ export class ArcaneAnglerPage {
             return { purchased: false, reason: 'unavailable' };
         }
 
+        this.assertAutomationAllowed();
         await customInput.fill('');
-        await customInput.click();
+        await this.trustedClick(customInput);
+        this.assertAutomationAllowed();
         await customInput.pressSequentially(String(quantity), {
             delay: 35,
         });
@@ -696,7 +749,7 @@ export class ArcaneAnglerPage {
             return { purchased: false, reason: 'insufficient-funds' };
         }
 
-        await purchaseButton.click();
+        await this.trustedClick(purchaseButton);
         await waitUntil(async () => {
             const className = await purchaseButton.getAttribute('class') || '';
             return className.includes('bg-red-600');
@@ -716,7 +769,7 @@ export class ArcaneAnglerPage {
             timeout: this.config.navigationTimeoutMs,
         }).catch(() => null);
 
-        await purchaseButton.click();
+        await this.trustedClick(purchaseButton);
         const response = await responsePromise;
 
         if (response && !response.ok()) {
@@ -767,7 +820,7 @@ export class ArcaneAnglerPage {
             timeout: this.config.navigationTimeoutMs,
         }).catch(() => null);
 
-        await equipButton.click();
+        await this.trustedClick(equipButton);
         const response = await responsePromise;
 
         if (response && !response.ok()) {
@@ -851,7 +904,7 @@ export class ArcaneAnglerPage {
             message: '设置页中找不到抛竿模式标签',
             shouldStop: this.shouldStop,
         });
-        await castStyleTab.click();
+        await this.trustedClick(castStyleTab);
 
         let classicModeButton = null;
 
@@ -881,7 +934,7 @@ export class ArcaneAnglerPage {
                 timeout: 5_000,
             }).catch(() => null);
 
-            await classicModeButton.click();
+            await this.trustedClick(classicModeButton);
 
             await this.page.waitForFunction(
                 () => localStorage.getItem('castStyle') === 'button',
@@ -928,6 +981,7 @@ export class ArcaneAnglerPage {
     }
 
     async bootstrap({ reload = false } = {}) {
+        this.assertAutomationAllowed();
         await this.reporter.update({
             level: 'running',
             phase: 'navigation',
@@ -945,6 +999,7 @@ export class ArcaneAnglerPage {
             });
         }
 
+        this.assertAutomationAllowed();
         await this.waitForInitialUi();
         await this.ensureAuthenticated();
 
@@ -1021,6 +1076,7 @@ export class ArcaneAnglerPage {
     }
 
     async humanClick(locator) {
+        this.assertAutomationAllowed();
         await locator.scrollIntoViewIfNeeded();
         const box = await locator.boundingBox();
 
@@ -1033,6 +1089,7 @@ export class ArcaneAnglerPage {
 
         await this.humanMoveTo(targetX, targetY);
         await sleep(randomInteger(45, 120));
+        this.assertAutomationAllowed();
         await this.page.mouse.down();
         await sleep(randomInteger(45, 110));
         await this.page.mouse.up();
@@ -1127,6 +1184,7 @@ export class ArcaneAnglerPage {
     }
 
     async dragCaptchaRange(range, targetValue) {
+        this.assertAutomationAllowed();
         await range.scrollIntoViewIfNeeded();
         const box = await range.boundingBox();
         const values = await range.evaluate(input => ({
@@ -1149,6 +1207,7 @@ export class ArcaneAnglerPage {
 
         await this.humanMoveTo(currentX, y);
         await sleep(randomInteger(80, 170));
+        this.assertAutomationAllowed();
         await this.page.mouse.down();
         await sleep(randomInteger(70, 150));
         await this.humanMoveTo(toX(targetValue), y + randomFloat(-1.2, 1.2));
@@ -1170,6 +1229,7 @@ export class ArcaneAnglerPage {
             }
 
             for (let index = 0; index < corrections; index += 1) {
+                this.assertAutomationAllowed();
                 await this.page.keyboard.press(key);
                 await sleep(randomInteger(35, 90));
             }
