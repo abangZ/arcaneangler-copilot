@@ -1,0 +1,180 @@
+# Arcane Angler Copilot
+
+Arcane Angler Copilot 是一个基于 Playwright 的自动钓鱼程序，适合在本地电脑或 Linux 服务器上运行。
+
+程序会打开 Chromium，自动登录 [Arcane Angler](https://arcaneangler.com/)、选择角色、切换到经典固定按钮模式并持续钓鱼。运行时会在游戏页面右上角显示控制面板，用于查看状态和调整设置。
+
+## 功能
+
+- 使用账号密码自动登录，并保存浏览器登录状态。
+- 自动选择角色；支持指定角色名。
+- 自动切换到经典固定按钮模式。
+- 自动等待并点击可用的抛竿按钮。
+- 可选择目标鱼饵，并在库存低于阈值时通过 Equipment 页面自动补货和装备。
+- 页面内控制面板显示当前目标、运行状态、抛竿次数和最近事件。
+- 状态首页提供开始/暂停按钮，设置页可管理钓鱼、鱼饵和验证功能。
+- 自动优先领取每日登录奖励，并跳过会遮挡操作的新手引导。
+- 页面卡住或连续出错时保存截图并自动尝试恢复。
+- 检测到 Human Verification 时，通过真实鼠标点击和滑块拖动自动完成；失败后暂停并等待人工处理。
+- 支持无头模式和 systemd，适合 Linux 服务器长期运行。
+- 不依赖英文界面文本，可与常见汉化脚本同时使用。
+
+## 环境要求
+
+- Node.js 20 或更高版本
+- pnpm 9
+- Linux、macOS，或其他 Playwright 支持的平台
+
+## 安装
+
+安装项目依赖：
+
+```bash
+pnpm install
+```
+
+安装 Chromium：
+
+```bash
+pnpm run install:browser
+```
+
+Linux 服务器需要同时安装 Chromium 的系统依赖：
+
+```bash
+pnpm exec playwright install --with-deps chromium
+```
+
+## 配置
+
+复制配置模板：
+
+```bash
+cp .env.example .env
+chmod 600 .env
+```
+
+编辑 `.env`，至少填写登录账号和密码：
+
+```dotenv
+ARCANE_USERNAME=your-login-username
+ARCANE_PASSWORD=your-password
+```
+
+这里需要填写 Arcane Angler 的 `Username (Login)`，不是公开展示的 Profile Name。
+
+常用配置：
+
+| 环境变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `ARCANE_USERNAME` | 必填 | 登录用户名 |
+| `ARCANE_PASSWORD` | 必填 | 登录密码 |
+| `ARCANE_CHARACTER` | 空 | 指定角色展示名；为空时选择第一个角色 |
+| `ARCANE_HEADLESS` | `true` | 是否使用无头模式 |
+| `ARCANE_AUTOMATION_ENABLED` | `true` | 自动化总开关 |
+| `ARCANE_AUTO_FISHING` | `true` | 是否启用自动钓鱼 |
+| `ARCANE_AUTO_BAIT` | `false` | 是否自动补货并装备目标鱼饵；默认关闭以免首次启动消耗金币 |
+| `ARCANE_BAIT_ID` | 空 | 目标鱼饵的稳定 ID；建议通过页面面板选择 |
+| `ARCANE_BAIT_RESTOCK_THRESHOLD` | `100` | 库存低于该值时购买一次 |
+| `ARCANE_BAIT_PURCHASE_QUANTITY` | `1000` | 每次购买数量，必须是 100 的倍数 |
+| `ARCANE_BAIT_CHECK_INTERVAL_MS` | `30000` | 鱼饵库存检查间隔，范围 5000 到 3600000 毫秒 |
+| `ARCANE_AUTO_VERIFY` | `true` | 是否使用页面控件自动完成人机验证 |
+| `ARCANE_ENFORCE_CLASSIC_MODE` | `true` | 是否自动切换经典固定按钮模式 |
+| `ARCANE_CLICK_DELAY_MIN_MS` | `250` | 按钮可用后的最小点击延迟 |
+| `ARCANE_CLICK_DELAY_MAX_MS` | `800` | 按钮可用后的最大点击延迟 |
+
+其他可选配置请查看 [.env.example](.env.example)。
+
+## 运行
+
+```bash
+pnpm start
+```
+
+首次使用时可以显示浏览器，方便确认登录和角色选择过程：
+
+```dotenv
+ARCANE_HEADLESS=false
+```
+
+登录状态保存在 `.data/browser`。登录失效时，程序会使用 `.env` 中的账号密码重新登录。
+
+按 `Ctrl+C` 可以停止程序。程序也支持 `SIGINT` 和 `SIGTERM`，会在退出前关闭浏览器。
+
+## 控制面板
+
+程序启动后，游戏页面右上角会出现 Arcane Angler Copilot 面板。
+
+- “状态”页面显示当前目标、操作状态、抛竿次数和最近事件，并提供开始/暂停主按钮。
+- “设置 → 通用”说明运行控制入口。
+- “设置 → 钓鱼”可以启停自动钓鱼、控制经典按钮模式并调整点击延迟。
+- “设置 → 鱼饵”可以选择目标鱼饵、设置补货阈值和每次购买数量，并主动开启自动管理。
+- “设置 → 验证”可以开启或关闭自动过验证。
+- 点击面板右上角的 `−` 可以折叠面板，点击 `+` 可以展开。
+
+面板设置保存在 `.data/settings.json`，重启后继续生效。删除该文件可以恢复 `.env` 中的默认值。账号密码不会写入面板设置文件。
+
+## Linux 服务器运行
+
+建议使用普通用户运行，不要使用 root。完成安装和配置后，可以直接执行：
+
+```bash
+pnpm start
+```
+
+项目提供了 [systemd 服务示例](deploy/arcaneangler-copilot.service.example)。使用前需要修改其中的 `User`、`WorkingDirectory` 和 `ExecStart`：
+
+```bash
+command -v pnpm
+sudo cp deploy/arcaneangler-copilot.service.example \
+  /etc/systemd/system/arcaneangler-copilot.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now arcaneangler-copilot
+sudo journalctl -u arcaneangler-copilot -f
+```
+
+请保留 `.data/browser`，避免服务重启后重复登录。出现 Human Verification 时，程序会先保存截图并自动操作页面验证；自动验证失败时会暂停，等待人工处理。
+
+## 常用命令
+
+```bash
+# 启动程序
+pnpm start
+
+# 检查公开登录页面和 Playwright 安装
+pnpm run smoke
+
+# 运行语法检查
+pnpm run check
+
+# 验证页面面板设置和持久化
+pnpm run smoke:panel
+
+# 验证奖励领取与鱼饵购买、装备流程
+pnpm run smoke:bait
+
+# 验证人机验证的真实鼠标事件
+pnpm run smoke:verification
+```
+
+## 本地数据
+
+以下内容已被 `.gitignore` 排除，不应提交到版本库：
+
+- `.env`：账号密码和本地配置。
+- `.data/`：浏览器登录状态和面板设置。
+- `artifacts/`：异常、人机验证和测试截图。
+- `node_modules/`：项目依赖。
+
+## 注意事项
+
+- 本程序只操作游戏页面，不直接构造 `/api/game/cast` 请求。
+- 鱼饵购买和装备只点击 Equipment 页面已有控件；程序不会自行构造购买或装备请求。
+- 自动验证只读取页面已经渲染的题面，并通过 Playwright 产生真实鼠标点击和拖动事件，不直接调用验证码接口。
+- 网站更新页面结构后，自动化功能可能需要同步更新。
+- 长期运行会持续消耗游戏内体力、鱼饵等资源。
+- 请自行确认并遵守 Arcane Angler 的服务条款、使用规则和所在地法律法规。
+
+## License
+
+MIT

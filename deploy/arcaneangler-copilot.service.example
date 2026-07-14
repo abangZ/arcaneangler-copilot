@@ -1,0 +1,17 @@
+[Unit]
+Description=Arcane Angler Copilot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=arcaneangler
+WorkingDirectory=/opt/tampermonkey-scripts/arcaneangler-copilot
+ExecStart=/usr/bin/pnpm start
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
