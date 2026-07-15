@@ -85,7 +85,11 @@ try {
             const content = document.getElementById('content');
             const state = {
                 player: {
+                    level: 27,
+                    xp: 450,
+                    xpToNext: 900,
                     currentBiome: 1,
+                    equippedBait: 'bait-1',
                     unlockedBiomes: [1, 2, 3, 12],
                     is_ironman: false,
                     boat: null,
@@ -119,6 +123,7 @@ try {
                     return [id, { name: id === 12 ? 'Biome Twelve' : 'Map ' + id }];
                 }),
             );
+            window.BAITS = [{ id: 'bait-1', name: 'River Grub', price: 12 }];
             window.ApiService = {
                 async getPlayerData() {
                     return structuredClone(state.player);
@@ -227,9 +232,25 @@ try {
         canAutomate: () => true,
     });
     const initialState = await session.getMapAutomationState();
+    const dashboard = await session.getDashboardSnapshot();
 
     assert.equal(initialState.eligibleDerbyCount, 1);
     assert.equal(initialState.activeDerby.isRegistered, true);
+    assert.equal(dashboard.level, 27);
+    assert.equal(dashboard.xp, 450);
+    assert.equal(dashboard.xpToNext, 900);
+    assert.deepEqual(dashboard.biome, {
+        id: '1',
+        name: 'Map 1',
+        weather: 'storm',
+        xpBonus: 50,
+    });
+    assert.deepEqual(dashboard.bait, {
+        id: 'bait-1',
+        name: 'River Grub',
+        price: 12,
+    });
+    assert.ok(Date.parse(dashboard.observedAt));
 
     const registration = await session.registerEligibleDerbiesThroughUi(1);
 

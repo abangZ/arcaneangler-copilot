@@ -147,6 +147,7 @@ const engine = new AutomationEngine({
         suspend: async () => lifecycleEvents.push('suspend'),
         resume: async () => lifecycleEvents.push('resume'),
     },
+    onPageReady: async () => lifecycleEvents.push('snapshot'),
 });
 
 engine.scheduler = lifecycleScheduler;
@@ -180,9 +181,10 @@ assert.equal(
 
 lifecycleNow = new Date(2026, 6, 16, 8, 0, 0, 0);
 await engine.runCycle();
-assert.deepEqual(lifecycleEvents.slice(-4), [
+assert.deepEqual(lifecycleEvents.slice(-5), [
     'resume',
     'bootstrap',
+    'snapshot',
     'reset',
     'tick',
 ]);

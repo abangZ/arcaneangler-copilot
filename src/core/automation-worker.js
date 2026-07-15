@@ -55,6 +55,12 @@ function describeRuntime(settings, profile) {
     return `配置已加载：${details.join('，')}。`;
 }
 
+function finiteNumber(value, fallback = null) {
+    const number = Number(value);
+
+    return Number.isFinite(number) ? number : fallback;
+}
+
 export class AutomationWorker {
     constructor({
         staticConfig,
@@ -75,6 +81,9 @@ export class AutomationWorker {
         this.browserProfile = null;
         this.stopRequested = false;
         this.runPromise = null;
+        this.dashboardSnapshot = null;
+        this.lastDashboardRefreshAt = 0;
+        this.dashboardRefreshPromise = null;
         this.dynamicConfig = this.createDynamicConfig();
     }
 
@@ -108,8 +117,78 @@ export class AutomationWorker {
     getState() {
         return {
             browserOpen: Boolean(this.context),
+            dashboard: this.dashboardSnapshot,
             ...this.engine?.getState(),
         };
+    }
+
+    async publishDashboardSnapshot(snapshot) {
+        this.dashboardSnapshot = snapshot;
+        await this.reporter.update({
+            dashboard: snapshot,
+        }, { record: false });
+    }
+
+    async refreshDashboardSnapshot({ force = false } = {}) {
+        const refreshIntervalMs = 60_000;
+
+        if (
+            !force &&
+            Date.now() - this.lastDashboardRefreshAt < refreshIntervalMs
+        ) {
+            return this.dashboardSnapshot;
+        }
+
+        if (this.dashboardRefreshPromise) {
+            return this.dashboardRefreshPromise;
+        }
+
+        this.dashboardRefreshPromise = (async () => {
+            try {
+                const snapshot = await this.session.getDashboardSnapshot();
+
+                this.lastDashboardRefreshAt = Date.now();
+                await this.publishDashboardSnapshot(snapshot);
+                return snapshot;
+            } catch {
+                return this.dashboardSnapshot;
+            } finally {
+                this.dashboardRefreshPromise = null;
+            }
+        })();
+
+        return this.dashboardRefreshPromise;
+    }
+
+    async updateDashboardSnapshotFromCast(result, context) {
+        const previous = this.dashboardSnapshot || {};
+        const previousBiome = previous.biome;
+        const biomeChanged = context?.biomeId &&
+            context.biomeId !== previousBiome?.id;
+        const snapshot = {
+            level: finiteNumber(result?.newLevel, previous.level),
+            xp: finiteNumber(result?.newXP, previous.xp),
+            xpToNext: finiteNumber(result?.xpToNext, previous.xpToNext),
+            biome: context?.biomeId
+                ? {
+                    id: context.biomeId,
+                    name: context.biomeName,
+                    weather: biomeChanged ? null : previousBiome?.weather,
+                    xpBonus: biomeChanged ? null : previousBiome?.xpBonus,
+                }
+                : previousBiome || null,
+            bait: context?.baitId
+                ? {
+                    id: context.baitId,
+                    name: context.baitName,
+                    price: context.baitPrice,
+                }
+                : previous.bait || null,
+            observedAt: new Date().toISOString(),
+        };
+
+        await this.publishDashboardSnapshot(snapshot);
+        await this.refreshDashboardSnapshot();
     }
 
     configurePage(page) {
@@ -210,6 +289,15 @@ export class AutomationWorker {
                         message: `收益统计写入失败：${error.message}`,
                     });
                 }
+
+                try {
+                    await this.updateDashboardSnapshotFromCast(
+                        result,
+                        context,
+                    );
+                } catch {
+                    // 首页快照失败不能影响收益统计或后续抛竿。
+                }
             },
         });
 
@@ -232,6 +320,7 @@ export class AutomationWorker {
             reporter: this.reporter,
             session: this.session,
             browserLifecycle,
+            onPageReady: () => this.refreshDashboardSnapshot({ force: true }),
         });
 
         this.engine.register(new VerificationFeature({

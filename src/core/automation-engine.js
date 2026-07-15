@@ -11,11 +11,13 @@ export class AutomationEngine {
         reporter,
         session,
         browserLifecycle,
+        onPageReady = null,
     }) {
         this.settings = settings;
         this.reporter = reporter;
         this.session = session;
         this.browserLifecycle = browserLifecycle;
+        this.onPageReady = onPageReady;
         this.scheduler = new OperationScheduler(settings.get().schedule);
         this.features = [];
         this.stopRequested = false;
@@ -87,6 +89,7 @@ export class AutomationEngine {
     async recover() {
         await this.session.captureScreenshot('recovery');
         await this.session.bootstrap({ reload: true });
+        await this.onPageReady?.();
         this.resetFeatures();
         this.consecutiveErrors = 0;
         this.started = true;
@@ -154,6 +157,7 @@ export class AutomationEngine {
 
         try {
             await this.session.bootstrap({ reload });
+            await this.onPageReady?.();
             this.started = true;
         } finally {
             this.pageSetupInProgress = false;

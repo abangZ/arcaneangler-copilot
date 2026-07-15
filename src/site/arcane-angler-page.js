@@ -144,6 +144,93 @@ export class ArcaneAnglerPage {
         }, { currentBiome: biomeId, equippedBait: baitId });
     }
 
+    async getDashboardSnapshot() {
+        const snapshot = await this.page.evaluate(async () => {
+            if (!window.ApiService) {
+                throw new Error('页面未提供 ApiService。');
+            }
+
+            const playerResponse = await window.ApiService.getPlayerData();
+            const player = playerResponse?.player || playerResponse;
+            let weatherByBiome = {};
+
+            try {
+                const weatherResponse =
+                    await window.ApiService.getAllBiomeWeather();
+
+                weatherByBiome = weatherResponse?.weather ||
+                    weatherResponse ||
+                    {};
+            } catch {
+                // 天气接口失败时仍返回玩家等级和当前装备。
+            }
+
+            const biomeId = String(player?.currentBiome ?? '').trim();
+            const baitId = String(player?.equippedBait ?? '').trim();
+            const biome = window.BIOMES?.[biomeId] || null;
+            const weather = weatherByBiome?.[biomeId] || null;
+            let bait = null;
+
+            if (typeof window.getBaitById === 'function') {
+                try {
+                    bait = window.getBaitById(baitId);
+                } catch {
+                    // 回退到 BAITS catalog。
+                }
+            }
+
+            if (!bait && Array.isArray(window.BAITS)) {
+                bait = window.BAITS.find(candidate =>
+                    String(candidate?.id) === baitId,
+                ) || null;
+            }
+
+            const baitPrice = Number(bait?.price);
+
+            return {
+                level: Number(player?.level),
+                xp: Number(player?.xp),
+                xpToNext: Number(player?.xpToNext),
+                biome: biomeId
+                    ? {
+                        id: biomeId,
+                        name: String(biome?.name || '').trim() ||
+                            `地图 ${biomeId}`,
+                        weather: String(weather?.weather || '').trim() || null,
+                        xpBonus: Number.isFinite(Number(weather?.xpBonus))
+                            ? Number(weather.xpBonus)
+                            : null,
+                    }
+                    : null,
+                bait: baitId
+                    ? {
+                        id: baitId,
+                        name: String(bait?.name || '').trim() || baitId,
+                        price: Number.isFinite(baitPrice) && baitPrice >= 0
+                            ? baitPrice
+                            : null,
+                    }
+                    : null,
+            };
+        });
+        const normalizedNumber = (value, { positive = false } = {}) => {
+            const number = Number(value);
+
+            return Number.isFinite(number) && (!positive || number > 0)
+                ? number
+                : null;
+        };
+
+        return {
+            level: normalizedNumber(snapshot.level),
+            xp: normalizedNumber(snapshot.xp),
+            xpToNext: normalizedNumber(snapshot.xpToNext, { positive: true }),
+            biome: snapshot.biome,
+            bait: snapshot.bait,
+            observedAt: new Date().toISOString(),
+        };
+    }
+
     async trustedClick(locator, options) {
         this.assertAutomationAllowed();
         await locator.click(options);
