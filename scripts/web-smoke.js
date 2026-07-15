@@ -4,6 +4,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
+import { chromium } from 'playwright';
+
 import { LogStore } from '../src/core/log-store.js';
 import {
     DEFAULT_SETTINGS,
@@ -295,6 +297,67 @@ try {
         const fileMode = (await fs.stat(settingsFile)).mode & 0o777;
         assert.equal(fileMode, 0o600);
 
+        const browser = await chromium.launch({ headless: true });
+
+        try {
+            const context = await browser.newContext();
+            const page = await context.newPage();
+            const pageErrors = [];
+
+            page.on('pageerror', error => pageErrors.push(error.message));
+            await page.goto(origin);
+            await page.locator('#login-username').fill('angler');
+            await page.locator('#login-password').fill(
+                'correct horse battery staple',
+            );
+            await page.locator('#login-button').click();
+            await page.locator('#app-view').waitFor({ state: 'visible' });
+            await assert.doesNotReject(() => page.waitForFunction(() =>
+                document.getElementById('stream-state')?.textContent ===
+                    '已连接',
+            ));
+
+            const sessionCookie = (await context.cookies(origin))
+                .find(cookieValue => cookieValue.name === 'arcane_session');
+
+            assert.ok(sessionCookie);
+            assert.equal(sessionCookie.secure, false);
+            assert.equal(sessionCookie.sameSite, 'Strict');
+
+            const sessionResponse = page.waitForResponse(response =>
+                new URL(response.url()).pathname === '/api/session' &&
+                response.request().method() === 'GET',
+            );
+
+            await page.reload();
+            assert.equal((await sessionResponse).status(), 200);
+            await page.locator('#app-view').waitFor({ state: 'visible' });
+            assert.equal(await page.locator('#login-view').isVisible(), false);
+            await assert.doesNotReject(() => page.waitForFunction(() =>
+                document.getElementById('stream-state')?.textContent ===
+                    '已连接',
+            ));
+            assert.deepEqual(pageErrors, []);
+
+            const startResponse = page.waitForResponse(response =>
+                new URL(response.url()).pathname === '/api/actions/start',
+            );
+
+            await page.locator('#start-button').click();
+            assert.equal((await startResponse).status(), 200);
+            await page.locator('#stop-button').waitFor({ state: 'visible' });
+
+            const stopResponse = page.waitForResponse(response =>
+                new URL(response.url()).pathname === '/api/actions/stop',
+            );
+
+            await page.locator('#stop-button').click();
+            assert.equal((await stopResponse).status(), 200);
+            await page.locator('#start-button').waitFor({ state: 'visible' });
+        } finally {
+            await browser.close();
+        }
+
         result = await requestJson(origin, '/api/actions/start', {
             method: 'POST',
             headers: {
@@ -323,8 +386,10 @@ try {
         assert.equal(result.body.controller.mode, 'running');
         assert.deepEqual(events, [
             'start:1',
-            'stop:1:settings-restart',
+            'stop:1:manual-stop',
             'start:2',
+            'stop:2:settings-restart',
+            'start:3',
         ]);
 
         const liveSettings = structuredClone(restartedSettings);
@@ -342,7 +407,7 @@ try {
         });
         assert.equal(result.response.status, 200);
         assert.equal(result.body.revision, 3);
-        assert.equal(events.length, 3);
+        assert.equal(events.length, 5);
 
         await reporter.update({
             level: 'running',
@@ -426,11 +491,13 @@ try {
 
         assert.deepEqual(events, [
             'start:1',
-            'stop:1:settings-restart',
+            'stop:1:manual-stop',
             'start:2',
-            'stop:2:manual-pause',
+            'stop:2:settings-restart',
             'start:3',
-            'stop:3:manual-stop',
+            'stop:3:manual-pause',
+            'start:4',
+            'stop:4:manual-stop',
         ]);
 
         result = await requestJson(origin, '/api/settings', {

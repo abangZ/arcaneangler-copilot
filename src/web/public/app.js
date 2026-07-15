@@ -589,15 +589,17 @@ function renderOverview() {
     const dashboardBaitId = dashboard?.bait?.id;
     const fallbackCurrentBait = stats.currentBait;
     const baitId = dashboardBaitId || fallbackCurrentBait?.baitId;
+    const matchesFallbackBait = baitId != null &&
+        fallbackCurrentBait?.baitId === baitId;
     const baitToday = (stats.todayBaitSummaries || [])
         .find(summary => summary.baitId === baitId) ||
-        (fallbackCurrentBait?.baitId === baitId
+        (matchesFallbackBait
             ? fallbackCurrentBait.today
             : {}) ||
         {};
     const baitTotal = (stats.baitSummaries || [])
         .find(summary => summary.baitId === baitId) ||
-        (fallbackCurrentBait?.baitId === baitId
+        (matchesFallbackBait
             ? fallbackCurrentBait.total
             : {}) ||
         {};
@@ -1106,9 +1108,20 @@ elements['log-level'].addEventListener('change', renderLogs);
 async function initialize() {
     try {
         state.session = await api('/api/session');
-        await loadDashboard();
     } catch {
         showLogin();
+        return;
+    }
+
+    try {
+        await loadDashboard();
+    } catch (error) {
+        if (!state.session) {
+            return;
+        }
+
+        showApp();
+        showToast(`控制台加载失败：${error.message}`, true);
     }
 }
 
