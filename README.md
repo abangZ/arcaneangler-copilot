@@ -9,6 +9,7 @@ Arcane Angler Copilot 是一个适合在 Linux 服务器长期运行的 Arcane A
 - 在运行中修改地图、鱼饵、钓鱼、Human Verification 和挂机计划，无需重启服务。
 - 支持启动、暂停、恢复、停止和重启 Playwright Worker；暂停会关闭浏览器。
 - 自动登录游戏并选择角色，登录状态保存在服务器。
+- 自动抛竿默认等待 500–2,000ms，并有 8% 概率停顿 5–10 秒、2% 概率停顿 20–40 秒。
 - 每轮随机运行 40–70 分钟，再随机休息 5–15 分钟。
 - 默认按服务器本地时间在 00:00–08:00 停止自动操作并关闭浏览器。
 - 支持固定地图，或按已参与 Events、天气经验和 Biome 等级自动选择地图。
@@ -89,6 +90,7 @@ http://127.0.0.1:3200
 服务进程重启后仍只启动 Web 控制面，需要再次点击“启动”。这样修改服务文件、排障或重启 systemd 时不会意外消耗游戏资源。
 
 网页配置保存在 `.data/settings.json`，使用原子写入并限制为当前服务用户可读写。账户密码不会写入该文件。
+升级时如果抛竿延迟仍是旧默认值 250–800ms，会自动原子迁移为 500–2,000ms；其他自定义范围不会改动。
 
 ## 远程安全访问
 
@@ -185,6 +187,7 @@ pnpm run check
 pnpm run smoke:web
 pnpm run smoke:reporter
 pnpm run smoke:fingerprint
+pnpm run smoke:fishing
 pnpm run smoke:scheduler
 pnpm run smoke:stats
 pnpm run smoke:map
@@ -193,7 +196,7 @@ pnpm run smoke:verification
 pnpm run smoke
 ```
 
-`pnpm run smoke:web` 使用本地临时服务验证 challenge 登录、session、CSRF、配置持久化、收益 API、SSE 和 Worker 控制；`pnpm run smoke:stats` 验证 `/cast` 增量解析、按天累计和持久化。它们不会连接真实游戏账户。
+`pnpm run smoke:web` 使用本地临时服务验证 challenge 登录、session、CSRF、配置持久化、收益 API、SSE 和 Worker 控制；`pnpm run smoke:fishing` 验证抛竿延迟的 90%/8%/2% 分层；`pnpm run smoke:stats` 验证 `/cast` 增量解析、按天累计和持久化。它们不会连接真实游戏账户。
 
 ## 本地数据
 

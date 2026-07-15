@@ -12,6 +12,24 @@ function clone(value) {
     return structuredClone(value);
 }
 
+function migrateLegacyDefaults(settings) {
+    const fishing = settings?.features?.fishing;
+
+    if (
+        fishing?.clickDelayMinMs !== 250 ||
+        fishing?.clickDelayMaxMs !== 800
+    ) {
+        return settings;
+    }
+
+    const migrated = clone(settings);
+    migrated.features.fishing.clickDelayMinMs =
+        DEFAULT_SETTINGS.features.fishing.clickDelayMinMs;
+    migrated.features.fishing.clickDelayMaxMs =
+        DEFAULT_SETTINGS.features.fishing.clickDelayMaxMs;
+    return migrated;
+}
+
 export class SettingsRevisionError extends Error {
     constructor() {
         super('配置已被其他页面修改，请刷新后重试。');
@@ -50,6 +68,8 @@ export class SettingsStore {
                 );
             }
 
+            const migratedSettings = migrateLegacyDefaults(stored.settings);
+
             this.value = {
                 version: SETTINGS_VERSION,
                 configured: stored.configured === true,
@@ -57,9 +77,14 @@ export class SettingsStore {
                     stored.revision >= 0
                     ? stored.revision
                     : 0,
-                settings: validateSettings(stored.settings),
+                settings: validateSettings(migratedSettings),
             };
-            await fs.chmod(this.filePath, 0o600);
+
+            if (migratedSettings === stored.settings) {
+                await fs.chmod(this.filePath, 0o600);
+            } else {
+                await this.write(this.value);
+            }
         } catch (error) {
             if (error.code !== 'ENOENT') {
                 this.loadError = error.message;

@@ -150,7 +150,7 @@ feature 只编排语义操作：
 - `VerificationFeature`：优先处理页面验证。
 - `MapFeature`：报名可参与 Derby，并按赛事或经验权重切换已解锁地图。
 - `BaitFeature`：按当前地图的 `0..4` 档位购买和装备鱼饵。
-- `FishingFeature`：确保经典模式并点击可用抛竿按钮。
+- `FishingFeature`：确保经典模式，按 90% 常规、8% 短停顿、2% 长停顿分层等待后点击可用抛竿按钮；等待期间每 500ms 重新检查 scheduler gate。
 
 HTTP API 和 Web UI 不得直接持有 DOM Locator，也不得绕过 Engine queue 调用页面方法。
 
@@ -189,6 +189,7 @@ SIGINT / SIGTERM 的顺序是：
 
 - `pnpm run smoke:web`：challenge 登录、session/CSRF、配置持久化、收益 API、SSE 和 Worker 控制。
 - `pnpm run smoke:reporter`：运行配置快照、结构化输出和重复抑制。
+- `pnpm run smoke:fishing`：默认普通延迟和抛竿延迟的 90%/8%/2% 概率边界。
 - `pnpm run smoke:scheduler`：active/rest/quiet 和浏览器 suspend/resume。
 - `pnpm run smoke:stats`：`/cast` 响应解析、每日/累计收益和持久化。
 - `pnpm run smoke:map`：Derby 报名、地图算法和可信点击。

@@ -27,8 +27,8 @@ export const DEFAULT_SETTINGS = deepFreeze({
         fishing: {
             enabled: true,
             enforceClassicMode: true,
-            clickDelayMinMs: 250,
-            clickDelayMaxMs: 800,
+            clickDelayMinMs: 500,
+            clickDelayMaxMs: 2_000,
         },
         map: {
             mode: 'off',

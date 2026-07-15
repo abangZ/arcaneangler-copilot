@@ -4,6 +4,66 @@ import {
     sleep,
 } from '../core/browser-utils.js';
 
+const CAST_DELAY_TIERS = Object.freeze([
+    {
+        threshold: 0.02,
+        minMs: 20_000,
+        maxMs: 40_000,
+        label: '较长停顿',
+    },
+    {
+        threshold: 0.10,
+        minMs: 5_000,
+        maxMs: 10_000,
+        label: '短暂停顿',
+    },
+]);
+
+export function selectCastDelay(fishingSettings, {
+    chance = Math.random,
+    integer = randomInteger,
+} = {}) {
+    const roll = chance();
+    const tier = CAST_DELAY_TIERS.find(candidate =>
+        roll < candidate.threshold,
+    );
+
+    if (tier) {
+        return {
+            durationMs: integer(tier.minMs, tier.maxMs),
+            label: tier.label,
+        };
+    }
+
+    return {
+        durationMs: integer(
+            fishingSettings.clickDelayMinMs,
+            fishingSettings.clickDelayMaxMs,
+        ),
+        label: '常规延迟',
+    };
+}
+
+export async function waitForCastDelay(durationMs, {
+    assertAllowed,
+    sleepFor = sleep,
+    now = Date.now,
+    checkIntervalMs = 500,
+}) {
+    const deadline = now() + durationMs;
+
+    while (true) {
+        assertAllowed();
+        const remainingMs = deadline - now();
+
+        if (remainingMs <= 0) {
+            return;
+        }
+
+        await sleepFor(Math.min(checkIntervalMs, remainingMs));
+    }
+}
+
 export class FishingFeature {
     constructor({ session, settings, reporter }) {
         this.id = 'fishing';
@@ -78,18 +138,18 @@ export class FishingFeature {
         const castButton = await this.session.getReadyCastButton();
 
         if (castButton) {
-            const delay = randomInteger(
-                settings.features.fishing.clickDelayMinMs,
-                settings.features.fishing.clickDelayMaxMs,
-            );
+            const delay = selectCastDelay(settings.features.fishing);
 
             await this.reporter.update({
                 level: 'running',
                 phase: 'fishing',
                 target: '点击抛竿按钮',
-                message: `抛竿按钮已可用，等待 ${delay}ms 后点击。`,
+                message: `抛竿按钮已可用，本次${delay.label}，等待 ${delay.durationMs}ms 后点击。`,
             }, { record: false });
-            await sleep(delay);
+            await waitForCastDelay(delay.durationMs, {
+                assertAllowed: () =>
+                    this.session.assertAutomationAllowed(),
+            });
 
             const latestSettings = this.settings.get();
 
