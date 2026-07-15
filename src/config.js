@@ -221,7 +221,7 @@ export const config = Object.freeze({
         { min: 60_000, max: 86_400_000 },
     ),
     autoBait: readBoolean('ARCANE_AUTO_BAIT', false),
-    baitId: readString('ARCANE_BAIT_ID'),
+    baitTier: readInteger('ARCANE_BAIT_TIER', 0, { max: 4 }),
     baitRestockThreshold: readInteger(
         'ARCANE_BAIT_RESTOCK_THRESHOLD',
         100,

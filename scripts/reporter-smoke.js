@@ -11,7 +11,7 @@ const settings = RuntimeSettings.fromConfig({
     mapCheckIntervalMs: 3_600_000,
     autoVerify: true,
     autoBait: true,
-    baitId: 'bait_default',
+    baitTier: 0,
     baitRestockThreshold: 100,
     baitPurchaseQuantity: 1_000,
     baitCheckIntervalMs: 30_000,
@@ -37,7 +37,7 @@ assert.deepEqual(settings.get(), {
         verification: { enabled: true },
         bait: {
             enabled: true,
-            selectedBaitId: 'bait_default',
+            selectedBaitTier: 0,
             restockThreshold: 100,
             purchaseQuantity: 1_000,
             checkIntervalMs: 30_000,

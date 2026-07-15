@@ -27,9 +27,9 @@
 
 - 每日登录奖励会在普通弹窗关闭逻辑之前识别；异步加载完成后优先领取，再关闭弹窗。加载失败不会误报为领取成功。
 - 已新增独立 `BaitFeature`，按 `VerificationFeature(0) → BaitFeature(50) → FishingFeature(100)` 调度。
-- 自动鱼饵会读取当前 biome、按稳定 bait ID 定位卡片、低库存时通过页面自定义输入和二次确认购买、有库存后装备，并返回 Fishing。
+- 自动鱼饵会读取当前 biome、按用户配置的 `0..4` 档位解析该地图实际 bait ID、低库存时通过页面自定义输入和二次确认购买、有库存后装备，并返回 Fishing。
 - 购买按钮不可用时按金币不足等待下次检查，不触发恢复重载。
-- 鱼饵 ID、补货阈值、购买数量和功能开关由 `.env` 提供；购买数量继续强制为 100 的倍数。
+- 鱼饵档位、补货阈值、购买数量和功能开关由 `.env` 提供；购买数量继续强制为 100 的倍数。
 - README、架构文档、环境变量示例、控制台报告器和 smoke 入口均已同步。
 
 已通过：
@@ -71,7 +71,7 @@ pnpm run smoke:bait
 
 ```text
 ARCANE_AUTO_BAIT=false
-ARCANE_BAIT_ID=
+ARCANE_BAIT_TIER=0
 ARCANE_BAIT_RESTOCK_THRESHOLD=100
 ARCANE_BAIT_PURCHASE_QUANTITY=1000
 ARCANE_BAIT_CHECK_INTERVAL_MS=30000
@@ -87,14 +87,14 @@ ARCANE_BAIT_CHECK_INTERVAL_MS=30000
 ```json
 {
   "enabled": false,
-  "selectedBaitId": "",
+  "selectedBaitTier": 0,
   "restockThreshold": 100,
   "purchaseQuantity": 1000,
   "checkIntervalMs": 30000
 }
 ```
 
-- 数值、布尔值和购买数量的校验集中在 `src/config.js`；`purchaseQuantity` 限制为 `100..999900` 且必须是 100 的倍数，`restockThreshold` 限制为 `0..999999`。
+- 数值、布尔值和购买数量的校验集中在 `src/config.js`；`selectedBaitTier` 限制为 `0..4`，`purchaseQuantity` 限制为 `100..999900` 且必须是 100 的倍数，`restockThreshold` 限制为 `0..999999`。
 - 不再读取或写入 `.data/settings.json`，也不提供运行中动态更新入口。
 
 ## 登录奖励的真实页面结构与根因
@@ -184,10 +184,10 @@ div.max-w-6xl.mx-auto div.space-y-3 > div.p-4.rounded-lg.border-2
 
 1. 从当前钓鱼页的 `[B1]` 这类稳定编号标记解析 biome ID；只依赖 `B` 和数字，不依赖 biome 英文名。
 2. 只读调用页面内已有的 `window.getBaitsForBiome(biomeId)` 获取 `{ id, name, price }` 列表。该操作不发送 HTTP 请求。
-3. 根据用户配置的稳定 bait ID 找到列表索引。
+3. 根据用户配置的 `0..4` 鱼饵档位读取列表中相同索引的项目，获得当前 biome 实际使用的 bait ID。
 4. 用同一索引选择 DOM 卡片。
 
-这样即使汉化脚本修改了卡片文本，仍可按 bait ID 和结构顺序操作。
+这样切换 biome 后会继续选择相同档位，但自动使用新地图自己的 bait ID；即使汉化脚本修改了卡片文本，也仍可按结构顺序操作。
 
 ### 库存与装备状态
 
@@ -257,15 +257,14 @@ FishingFeature     100
 建议流程：
 
 1. 未到 `checkIntervalMs` 时返回 `false`，继续让钓鱼功能运行。
-2. 未选择 `selectedBaitId` 时记录等待状态并返回 `false`。
-3. 确认当前在游戏 shell，处理可能存在的奖励/普通弹窗。
-4. 从钓鱼页读取 biome ID 和当前 biome 的 bait catalog。
-5. 如果目标 bait 在当前 biome 不可用，报告状态并延后检查。
-6. 进入 Equipment → Baits，读取库存和装备状态。
-7. 当 `stock < restockThreshold` 时，按 `purchaseQuantity` 购买一次。
-8. 有库存但尚未装备时，点击装备。
-9. 返回 Fishing 页面。
-10. 更新下一次检查时间。
+2. 确认当前在游戏 shell，处理可能存在的奖励/普通弹窗。
+3. 从钓鱼页读取 biome ID 和当前 biome 的 bait catalog。
+4. 按 `selectedBaitTier` 读取当前 catalog 的相同索引；如果档位不可用，报告状态并延后检查。
+5. 进入 Equipment → Baits，读取库存和装备状态。
+6. 当 `stock < restockThreshold` 时，按 `purchaseQuantity` 购买一次。
+7. 有库存但尚未装备时，点击装备。
+8. 返回 Fishing 页面。
+9. 更新下一次检查时间。
 
 配置发生变化时应立即重置检查时间。页面恢复时 `reset()` 也应允许立即检查。
 
@@ -291,13 +290,13 @@ Feature 不应直接持有 Locator。
 
 ```dotenv
 ARCANE_AUTO_BAIT=false
-ARCANE_BAIT_ID=
+ARCANE_BAIT_TIER=0
 ARCANE_BAIT_RESTOCK_THRESHOLD=100
 ARCANE_BAIT_PURCHASE_QUANTITY=1000
 ARCANE_BAIT_CHECK_INTERVAL_MS=30000
 ```
 
-程序启动时会输出不含账号密码的配置摘要。后续通过 `StatusReporter` 输出 level、phase、当前 feature、目标、事件和累计抛竿次数；错误写入 stderr，其余状态写入 stdout，供 systemd journal 收集。自动鱼饵开启但 ID 缺失或不适用于当前 biome 时，日志会列出可选鱼饵名称与稳定 ID。
+程序启动时会输出不含账号密码的配置摘要。后续通过 `StatusReporter` 输出 level、phase、当前 feature、目标、事件和累计抛竿次数；错误写入 stderr，其余状态写入 stdout，供 systemd journal 收集。配置档位不适用于当前 biome 时，日志会列出可选鱼饵档位与名称。
 
 ## 已完成的文件清单
 
@@ -310,7 +309,7 @@ ARCANE_BAIT_CHECK_INTERVAL_MS=30000
 - `src/index.js`：已在 FishingFeature 前注册 BaitFeature。
 - `src/ui/copilot-panel.js`：已删除，不再向游戏页面注入操作面板。
 - `scripts/reporter-smoke.js`：已覆盖环境设置映射与 stdout/stderr 日志格式。
-- `scripts/bait-smoke.js`：已覆盖二次购买确认、库存更新、装备、检查间隔、金币不足和奖励领取优先级。
+- `scripts/bait-smoke.js`：已覆盖跨地图档位解析、二次购买确认、库存更新、装备、检查间隔、金币不足和奖励领取优先级。
 - `package.json`：已把新文件加入 `check`，并增加 `smoke:bait`。
 - `README.md`：已更新用户可见功能、配置表和控制台日志说明。
 - `docs/architecture.md`：已改为当前真实架构和执行流。
@@ -331,7 +330,7 @@ pnpm run smoke:bait
 
 1. 使用现有 `.env`，不要在日志或文档中打印密码。
 2. 先保持 `ARCANE_AUTO_BAIT=false`，确认启动日志中的功能开关与 `.env` 一致。
-3. 在 `.env` 中设置当前 biome 可用的收费鱼饵 ID，将购买量设为 100，做一次小额真实购买和装备验证；这是测试账号，用户已经授权用于登录和测试。
+3. 在 `.env` 中把 `ARCANE_BAIT_TIER` 设置为 `1..4` 中的收费鱼饵档位，将购买量设为 100，做一次小额真实购买和装备验证；这是测试账号，用户已经授权用于登录和测试。
 4. 确认购买后库存增加、目标鱼饵已装备、页面返回 Fishing 并继续抛竿。
 5. 再把购买量设为 1000，确认启动成功；非 100 倍数必须在配置加载阶段被拒绝。
 6. 用金币不足的鱼饵确认不会反复重载页面。

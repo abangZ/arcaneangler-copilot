@@ -23,7 +23,7 @@ export class RuntimeSettings {
                 },
                 bait: {
                     enabled: config.autoBait,
-                    selectedBaitId: config.baitId,
+                    selectedBaitTier: config.baitTier,
                     restockThreshold: config.baitRestockThreshold,
                     purchaseQuantity: config.baitPurchaseQuantity,
                     checkIntervalMs: config.baitCheckIntervalMs,

@@ -72,27 +72,15 @@ export class BaitFeature {
         const biomeId = await this.session.getCurrentBiomeId();
         const catalog = await this.session.getBaitCatalog(biomeId);
         const availableBaits = catalog
-            .map(bait => `${bait.name} (${bait.id})`)
+            .map((bait, tier) => `${tier}: ${bait.name}`)
             .join('、');
-
-        if (!baitSettings.selectedBaitId) {
-            this.scheduleNextCheck(baitSettings.checkIntervalMs);
-            await this.reportWaiting(
-                '等待配置目标鱼饵',
-                `自动鱼饵已开启，但未配置 ARCANE_BAIT_ID。当前 Biome ${biomeId} 可选：${availableBaits || '无'}。请修改 .env 后重启服务。`,
-            );
-            return false;
-        }
-
-        const targetBait = catalog.find(
-            bait => bait.id === baitSettings.selectedBaitId,
-        );
+        const targetBait = catalog[baitSettings.selectedBaitTier];
 
         if (!targetBait) {
             this.scheduleNextCheck(baitSettings.checkIntervalMs);
             await this.reportWaiting(
-                '等待目标鱼饵可用',
-                `目标鱼饵 ${baitSettings.selectedBaitId} 不适用于当前 Biome ${biomeId}。当前可选：${availableBaits || '无'}。`,
+                '等待目标鱼饵档位可用',
+                `鱼饵档位 ${baitSettings.selectedBaitTier} 不适用于当前 Biome ${biomeId}。当前可选：${availableBaits || '无'}。`,
             );
             return false;
         }

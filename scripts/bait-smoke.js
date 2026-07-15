@@ -47,38 +47,59 @@ try {
     `);
 
     await page.evaluate(() => {
-        window.BIOMES = [{ id: 1 }];
+        window.BIOMES = [{ id: 1 }, { id: 2 }];
         window.baitSmoke = {
-            equippedBaitId: 'bait_default',
+            currentBiomeId: 1,
+            equippedBaitId: 'bait_1_default',
             events: [],
             purchaseClicks: 0,
             trustedClicks: [],
             stocks: {
                 bait_1_low: 0,
                 bait_1_high: 0,
+                bait_2_low: 0,
+                bait_2_high: 0,
             },
         };
 
-        const catalog = [
-            {
-                id: 'bait_default',
-                name: 'Stale Bread Crust',
-                price: 0,
-            },
-            {
-                id: 'bait_1_low',
-                name: 'Tinker Dough',
-                price: 40,
-            },
-            {
-                id: 'bait_1_high',
-                name: 'River Nymph',
-                price: 200,
-            },
-        ];
+        const catalogs = {
+            1: [
+                {
+                    id: 'bait_1_default',
+                    name: 'Stale Bread Crust',
+                    price: 0,
+                },
+                {
+                    id: 'bait_1_low',
+                    name: 'Tinker Dough',
+                    price: 40,
+                },
+                {
+                    id: 'bait_1_high',
+                    name: 'River Nymph',
+                    price: 200,
+                },
+            ],
+            2: [
+                {
+                    id: 'bait_2_default',
+                    name: 'Cave Crumb',
+                    price: 0,
+                },
+                {
+                    id: 'bait_2_low',
+                    name: 'Glow Dough',
+                    price: 50,
+                },
+                {
+                    id: 'bait_2_high',
+                    name: 'Crystal Nymph',
+                    price: 250,
+                },
+            ],
+        };
 
-        window.getBaitsForBiome = biomeId =>
-            biomeId === 1 ? catalog : [catalog[0]];
+        window.getBaitsForBiome = biomeId => catalogs[biomeId] || [];
 
         const view = document.getElementById('game-view');
         const sidebar = [...document.querySelectorAll(
@@ -98,14 +119,17 @@ try {
         };
 
         const renderFishing = () => {
-            view.innerHTML = '<section><span>[B1]</span></section>';
+            view.innerHTML = `<section><span>[B${window.baitSmoke.currentBiomeId}]</span></section>`;
         };
 
         const renderBaits = () => {
+            const catalog = window.getBaitsForBiome(
+                window.baitSmoke.currentBiomeId,
+            );
             const cards = catalog.map(bait => {
                 const equipped = window.baitSmoke.equippedBaitId === bait.id;
                 const stock = window.baitSmoke.stocks[bait.id] ?? null;
-                const isExpensive = bait.id === 'bait_1_high';
+                const isExpensive = bait.id.endsWith('_high');
                 const purchaseControls = bait.price > 0
                     ? [
                         '<div class="text-right ml-2">',
@@ -142,7 +166,7 @@ try {
                 const input = button.parentElement.querySelector('input');
 
                 input.addEventListener('input', () => {
-                    button.disabled = button.dataset.buy === 'bait_1_high' ||
+                    button.disabled = button.dataset.buy.endsWith('_high') ||
                         Number(input.value) < 1;
                 });
                 button.addEventListener('click', async event => {
@@ -176,6 +200,13 @@ try {
                     renderBaits();
                 });
             });
+        };
+
+        window.baitSmoke.switchBiome = biomeId => {
+            window.baitSmoke.currentBiomeId = biomeId;
+            window.baitSmoke.equippedBaitId = `bait_${biomeId}_default`;
+            activateSidebar(0);
+            renderFishing();
         };
 
         const renderEquipment = () => {
@@ -257,7 +288,7 @@ try {
         features: {
             bait: {
                 enabled: true,
-                selectedBaitId: 'bait_1_low',
+                selectedBaitTier: 1,
                 restockThreshold: 100,
                 purchaseQuantity: 100,
                 checkIntervalMs: 30_000,
@@ -298,22 +329,36 @@ try {
         2,
     );
 
-    const unconfiguredFeature = new BaitFeature({ session, reporter });
-    const unconfiguredSettings = structuredClone(settingsSnapshot);
+    await page.evaluate(() => window.baitSmoke.switchBiome(2));
+    feature.reset();
+    assert.equal(await feature.tick(settingsSnapshot), true);
 
-    unconfiguredSettings.features.bait.selectedBaitId = '';
+    const biomeTwoResult = await page.evaluate(() => ({
+        equippedBaitId: window.baitSmoke.equippedBaitId,
+        purchaseClicks: window.baitSmoke.purchaseClicks,
+        stock: window.baitSmoke.stocks.bait_2_low,
+    }));
+
+    assert.equal(biomeTwoResult.stock, 100);
+    assert.equal(biomeTwoResult.purchaseClicks, 4);
+    assert.equal(biomeTwoResult.equippedBaitId, 'bait_2_low');
+
+    const unavailableFeature = new BaitFeature({ session, reporter });
+    const unavailableSettings = structuredClone(settingsSnapshot);
+
+    unavailableSettings.features.bait.selectedBaitTier = 4;
     assert.equal(
-        await unconfiguredFeature.tick(unconfiguredSettings),
+        await unavailableFeature.tick(unavailableSettings),
         false,
     );
-    assert.equal(reporter.get().target, '等待配置目标鱼饵');
-    assert.match(reporter.get().message, /Tinker Dough \(bait_1_low\)/);
+    assert.equal(reporter.get().target, '等待目标鱼饵档位可用');
+    assert.match(reporter.get().message, /1: Glow Dough/);
 
-    const catalog = await session.getBaitCatalog(1);
+    const catalog = await session.getBaitCatalog(2);
     await session.openBaitEquipment();
     assert.deepEqual(
         await session.buyBaitThroughUi(
-            'bait_1_high',
+            'bait_2_high',
             catalog,
             100,
             0,
@@ -336,7 +381,7 @@ try {
     );
 
     console.log(
-        'Bait smoke passed: reward priority, two-step purchase, stock, equip, interval and insufficient funds work.',
+        'Bait smoke passed: reward priority, cross-biome tiers, two-step purchase, stock, equip, interval and insufficient funds work.',
     );
 } finally {
     await browser.close();

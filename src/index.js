@@ -55,7 +55,7 @@ function describeRuntime(config, settings, profile) {
 
     if (snapshot.features.bait.enabled) {
         details.push(
-            `目标鱼饵=${snapshot.features.bait.selectedBaitId || '未配置'}`,
+            `目标鱼饵档位=${snapshot.features.bait.selectedBaitTier}`,
             `补货阈值=${snapshot.features.bait.restockThreshold}`,
             `购买数量=${snapshot.features.bait.purchaseQuantity}`,
         );
