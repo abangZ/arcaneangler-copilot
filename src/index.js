@@ -4,6 +4,7 @@ import { chromium } from 'playwright';
 
 import { config } from './config.js';
 import { AutomationEngine } from './core/automation-engine.js';
+import { createBrowserProfile } from './core/browser-profile.js';
 import { RuntimeSettings } from './core/runtime-settings.js';
 import { StatusReporter } from './core/status-reporter.js';
 import { BaitFeature } from './features/bait-feature.js';
@@ -13,6 +14,7 @@ import { ArcaneAnglerPage } from './site/arcane-angler-page.js';
 
 let context = null;
 let engine = null;
+let browserProfile = null;
 let stopRequested = false;
 
 function enabledLabel(enabled) {
@@ -23,7 +25,7 @@ function formatHour(hour) {
     return `${String(hour).padStart(2, '0')}:00`;
 }
 
-function describeRuntime(config, settings) {
+function describeRuntime(config, settings, profile) {
     const snapshot = settings.get();
     const details = [
         `无头模式=${enabledLabel(config.headless)}`,
@@ -31,6 +33,7 @@ function describeRuntime(config, settings) {
         `自动钓鱼=${enabledLabel(snapshot.features.fishing.enabled)}`,
         `自动鱼饵=${enabledLabel(snapshot.features.bait.enabled)}`,
         `自动验证=${enabledLabel(snapshot.features.verification.enabled)}`,
+        `Chromium=${profile.browserVersion}`,
         `运行=${config.activeMinMinutes}-${config.activeMaxMinutes} 分钟`,
         `休息=${config.restMinMinutes}-${config.restMaxMinutes} 分钟`,
         `夜间停机=${formatHour(config.quietStartHour)}-${formatHour(config.quietEndHour)}`,
@@ -62,12 +65,14 @@ async function launchBrowser() {
         config.userDataDir,
         {
             headless: config.headless,
+            channel: browserProfile.channel,
+            userAgent: browserProfile.userAgent,
             viewport: {
                 width: 1280,
                 height: 900,
             },
             locale: 'en-US',
-            args: ['--disable-dev-shm-usage'],
+            args: browserProfile.args,
         },
     );
 
@@ -104,12 +109,14 @@ async function main() {
     const settings = RuntimeSettings.fromConfig(config);
     const reporter = new StatusReporter();
 
+    browserProfile = createBrowserProfile();
+
     await reporter.update({
         level: 'idle',
         phase: 'starting',
         target: '启动 Copilot',
         activeFeature: '挂机服务',
-        message: describeRuntime(config, settings),
+        message: describeRuntime(config, settings, browserProfile),
     });
 
     const page = await launchBrowser();

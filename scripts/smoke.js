@@ -1,9 +1,17 @@
 import { chromium } from 'playwright';
 
-const browser = await chromium.launch({ headless: true });
+import { createBrowserProfile } from '../src/core/browser-profile.js';
+
+const profile = createBrowserProfile();
+const browser = await chromium.launch({
+    headless: true,
+    channel: profile.channel,
+    args: profile.args,
+});
 
 try {
     const page = await browser.newPage({
+        userAgent: profile.userAgent,
         viewport: {
             width: 1280,
             height: 900,

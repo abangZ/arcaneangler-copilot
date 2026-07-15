@@ -3,16 +3,23 @@ import fs from 'node:fs/promises';
 
 import { chromium } from 'playwright';
 
+import { createBrowserProfile } from '../src/core/browser-profile.js';
 import { StatusReporter } from '../src/core/status-reporter.js';
 import { BaitFeature } from '../src/features/bait-feature.js';
 import { ArcaneAnglerPage } from '../src/site/arcane-angler-page.js';
 
 const artifactsDir = await fs.mkdtemp('/tmp/arcaneangler-bait-smoke-');
 const reporter = new StatusReporter();
-const browser = await chromium.launch({ headless: true });
+const profile = createBrowserProfile();
+const browser = await chromium.launch({
+    headless: true,
+    channel: profile.channel,
+    args: profile.args,
+});
 
 try {
     const page = await browser.newPage({
+        userAgent: profile.userAgent,
         viewport: { width: 1280, height: 900 },
     });
 
