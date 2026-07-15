@@ -11,6 +11,7 @@ import {
     validateSettings,
 } from '../src/core/settings-schema.js';
 import { SettingsStore } from '../src/core/settings-store.js';
+import { StatsStore } from '../src/core/stats-store.js';
 import { StatusReporter } from '../src/core/status-reporter.js';
 import { WorkerController } from '../src/core/worker-controller.js';
 import { AuthService } from '../src/web/auth-service.js';
@@ -65,8 +66,15 @@ try {
     const logStore = new LogStore({
         directory: path.join(tempDirectory, 'logs'),
     });
+    const statsStore = new StatsStore({
+        filePath: path.join(tempDirectory, 'stats.json'),
+    });
 
-    await Promise.all([settingsStore.initialize(), logStore.initialize()]);
+    await Promise.all([
+        settingsStore.initialize(),
+        logStore.initialize(),
+        statsStore.initialize(),
+    ]);
     assert.equal(settingsStore.get().configured, false);
     assert.throws(() => validateSettings({}), SettingsValidationError);
 
@@ -116,6 +124,7 @@ try {
         port: 0,
         authService,
         settingsStore,
+        statsStore,
         controller,
         reporter,
     });
@@ -129,7 +138,15 @@ try {
 
         const pageResponse = await fetch(origin);
         assert.equal(pageResponse.status, 200);
-        assert.match(await pageResponse.text(), /Copilot 控制台/);
+        const pageHtml = await pageResponse.text();
+        assert.match(pageHtml, /登录控制台/);
+        assert.match(pageHtml, /data-view="overview"/);
+        assert.match(pageHtml, /data-view="stats"/);
+        assert.match(pageHtml, /data-view="logs"/);
+        assert.match(pageHtml, /id="settings-view"/);
+        const appSource = await (await fetch(`${origin}/app.js`)).text();
+        assert.match(appSource, /const LOG_LIMIT = 200/);
+        assert.match(appSource, /保存并进入控制台/);
 
         result = await requestJson(origin, '/api/auth/challenge', {
             method: 'POST',
@@ -286,6 +303,25 @@ try {
             target: '等待下一次抛竿',
             message: 'Web smoke log.',
         });
+        await statsStore.recordCast({
+            success: true,
+            currentBiome: 2,
+            equippedBait: 'bait-2',
+            count: 1,
+            rarity: 'Uncommon',
+            fish: { name: 'Web Smoke Fish' },
+            goldGained: 97,
+            xpGained: 1_241,
+            relicsGained: 0,
+        });
+
+        result = await requestJson(origin, '/api/stats', {
+            headers: originHeaders(origin, cookie),
+        });
+        assert.equal(result.response.status, 200);
+        assert.equal(result.body.today.casts, 1);
+        assert.equal(result.body.today.gold, 97);
+        assert.equal(result.body.lastContext.biomeId, '2');
 
         const abortController = new AbortController();
         const streamResponse = await fetch(`${origin}/api/events`, {
@@ -299,6 +335,7 @@ try {
 
         assert.match(streamText, /event: log/);
         assert.match(streamText, /event: controller/);
+        assert.match(streamText, /event: stats/);
         abortController.abort();
 
         const latestLogId = reporter.getLogs().at(-1).id;
@@ -379,5 +416,5 @@ try {
 }
 
 console.log(
-    'Web smoke passed: challenge login, session/CSRF, persisted settings, SSE logs and Worker controls work.',
+    'Web smoke passed: auth, settings, stats, SSE and Worker controls work.',
 );

@@ -59,11 +59,13 @@ export class AutomationWorker {
     constructor({
         staticConfig,
         settingsStore,
+        statsStore,
         reporter,
         chromiumApi = chromium,
     }) {
         this.staticConfig = staticConfig;
         this.settingsStore = settingsStore;
+        this.statsStore = statsStore;
         this.settings = new RuntimeSettings(settingsStore);
         this.reporter = reporter;
         this.chromium = chromiumApi;
@@ -197,6 +199,18 @@ export class AutomationWorker {
                 this.engine?.isStopping() ||
                 false,
             canAutomate: () => this.engine?.isOperationAllowed() || false,
+            onCastResult: async result => {
+                try {
+                    await this.statsStore.recordCast(result);
+                } catch (error) {
+                    await this.reporter.log({
+                        level: 'error',
+                        phase: 'fishing',
+                        target: '记录抛竿收益',
+                        message: `收益统计写入失败：${error.message}`,
+                    });
+                }
+            },
         });
 
         const browserLifecycle = {

@@ -1,31 +1,46 @@
-const elements = Object.fromEntries([
-    'login-view', 'dashboard-view', 'login-form', 'login-username',
-    'login-password', 'login-button', 'login-error', 'logout-button',
-    'session-user', 'stream-state', 'transport-warning',
-    'configuration-warning', 'load-error-warning', 'worker-mode',
-    'worker-since', 'browser-mode', 'schedule-mode', 'active-feature',
-    'active-target', 'cast-count', 'status-updated', 'status-message',
-    'settings-form', 'settings-revision', 'settings-note', 'save-settings',
-    'character', 'headless', 'fishing-enabled', 'classic-mode',
-    'click-delay-min', 'click-delay-max', 'map-mode', 'target-biome',
-    'map-check-minutes', 'bait-enabled', 'bait-tier', 'bait-threshold',
-    'bait-quantity', 'bait-check-seconds', 'active-min', 'active-max',
-    'rest-min', 'rest-max', 'quiet-start', 'quiet-end',
-    'verification-enabled', 'verification-delay-min',
-    'verification-delay-max', 'verification-attempts', 'poll-interval',
-    'stall-timeout-seconds', 'navigation-timeout-seconds',
-    'recovery-error-count', 'log-list', 'log-level', 'auto-scroll',
-    'clear-logs', 'toast', 'start-button', 'pause-button', 'resume-button',
-    'restart-button', 'stop-button',
-].map(id => [id, document.getElementById(id)]));
+const LOG_LIMIT = 200;
+
+const elementIds = [
+    'login-view', 'login-form', 'login-username', 'login-password',
+    'login-button', 'login-error', 'app-view', 'main-nav', 'session-user',
+    'stream-state', 'transport-warning', 'settings-button', 'logout-button',
+    'overview-view', 'stats-view', 'logs-view', 'settings-view',
+    'worker-mode', 'status-dot', 'status-summary', 'status-message',
+    'start-button', 'pause-button', 'resume-button', 'stop-button',
+    'today-casts', 'today-gold', 'today-xp', 'today-fish',
+    'active-feature', 'active-target', 'current-context', 'browser-mode',
+    'schedule-mode', 'worker-since', 'status-updated', 'issue-card',
+    'issue-text', 'stats-period', 'stats-today-casts', 'stats-today-fish',
+    'stats-today-gold', 'stats-today-xp', 'stats-today-relics',
+    'stats-today-chests', 'stats-today-gears', 'stats-gold-average',
+    'stats-total-casts', 'stats-total-fish', 'stats-total-gold',
+    'stats-total-xp', 'rarity-list', 'daily-stats-body', 'log-count',
+    'log-level', 'log-list', 'settings-title', 'settings-subtitle',
+    'settings-back', 'load-error-warning', 'settings-form',
+    'settings-revision', 'settings-note', 'save-settings', 'character',
+    'headless', 'fishing-enabled', 'classic-mode', 'click-delay-min',
+    'click-delay-max', 'map-mode', 'target-biome', 'map-check-minutes',
+    'bait-enabled', 'bait-tier', 'bait-threshold', 'bait-quantity',
+    'bait-check-seconds', 'active-min', 'active-max', 'rest-min',
+    'rest-max', 'quiet-start', 'quiet-end', 'verification-enabled',
+    'verification-delay-min', 'verification-delay-max',
+    'verification-attempts', 'poll-interval', 'stall-timeout-seconds',
+    'navigation-timeout-seconds', 'recovery-error-count', 'toast',
+];
+const elements = Object.fromEntries(
+    elementIds.map(id => [id, document.getElementById(id)]),
+);
 
 const state = {
     session: null,
     settings: null,
     controller: null,
     status: null,
+    stats: null,
     logs: [],
     eventSource: null,
+    currentView: null,
+    setupMode: false,
     settingsDirty: false,
     savingSettings: false,
     busy: false,
@@ -40,20 +55,24 @@ const WORKER_LABELS = {
     stopping: '停止中',
     error: '运行异常',
 };
-
 const BROWSER_LABELS = {
     closed: '已关闭',
     starting: '启动中',
     open: '运行中',
     suspended: '调度关闭',
 };
-
 const SCHEDULE_LABELS = {
     idle: '空闲',
     active: '运行',
     rest: '休息',
     quiet: '夜间停机',
     disabled: '无启用功能',
+};
+const ACTION_MESSAGES = {
+    start: '自动化已启动。',
+    pause: '自动化已暂停。',
+    resume: '自动化已恢复。',
+    stop: '自动化已停止。',
 };
 
 function base64UrlToBytes(value) {
@@ -62,11 +81,16 @@ function base64UrlToBytes(value) {
         normalized.length + (4 - normalized.length % 4) % 4,
         '=',
     );
-    return Uint8Array.from(atob(padded), character => character.charCodeAt(0));
+
+    return Uint8Array.from(
+        atob(padded),
+        character => character.charCodeAt(0),
+    );
 }
 
 function bytesToBase64Url(value) {
     let binary = '';
+
     for (const byte of new Uint8Array(value)) {
         binary += String.fromCharCode(byte);
     }
@@ -79,7 +103,9 @@ function bytesToBase64Url(value) {
 
 async function createLoginProof(password, username, challenge) {
     if (!globalThis.crypto?.subtle) {
-        throw new Error('当前浏览器环境不支持安全登录，请使用 HTTPS 或 localhost 访问。');
+        throw new Error(
+            '当前浏览器环境不支持安全登录，请使用 HTTPS 或 localhost。',
+        );
     }
 
     const passwordKey = await crypto.subtle.importKey(
@@ -163,16 +189,18 @@ function showLogin() {
     state.eventSource?.close();
     state.eventSource = null;
     state.session = null;
-    elements['dashboard-view'].hidden = true;
+    state.currentView = null;
+    elements['app-view'].hidden = true;
     elements['login-view'].hidden = false;
     elements['login-password'].value = '';
 }
 
-function showDashboard() {
+function showApp() {
     elements['login-view'].hidden = true;
-    elements['dashboard-view'].hidden = false;
+    elements['app-view'].hidden = false;
     elements['session-user'].textContent = state.session.username;
     const localHostnames = ['localhost', '127.0.0.1', '::1'];
+
     elements['transport-warning'].hidden =
         state.session.secureTransport ||
         localHostnames.includes(location.hostname);
@@ -184,6 +212,45 @@ function value(id) {
 
 function integer(id) {
     return Number(value(id));
+}
+
+function formatNumber(value, maximumFractionDigits = 2) {
+    return new Intl.NumberFormat('zh-CN', {
+        maximumFractionDigits,
+    }).format(Number(value) || 0);
+}
+
+function formatDate(value) {
+    if (!value) {
+        return '—';
+    }
+
+    return new Intl.DateTimeFormat('zh-CN', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+    }).format(new Date(value));
+}
+
+function formatElapsed(value) {
+    if (!value) {
+        return '尚未启动';
+    }
+
+    const milliseconds = Math.max(0, Date.now() - new Date(value).getTime());
+    const minutes = Math.floor(milliseconds / 60_000);
+
+    if (minutes < 1) {
+        return '刚刚启动';
+    }
+
+    const hours = Math.floor(minutes / 60);
+    return hours > 0
+        ? `${hours} 小时 ${minutes % 60} 分钟`
+        : `${minutes} 分钟`;
 }
 
 function fillSettings(snapshot) {
@@ -277,6 +344,13 @@ function collectSettings() {
     };
 }
 
+function updateMapTargetState() {
+    const fixed = value('map-mode') === 'fixed';
+
+    elements['target-biome'].disabled = !fixed;
+    elements['target-biome'].required = fixed;
+}
+
 function renderSettingsMeta() {
     if (!state.settings) {
         return;
@@ -284,8 +358,7 @@ function renderSettingsMeta() {
 
     elements['settings-revision'].textContent = state.settings.configured
         ? `版本 ${state.settings.revision}`
-        : '未保存';
-    elements['configuration-warning'].hidden = state.settings.configured;
+        : '首次保存';
     elements['load-error-warning'].hidden = !state.settings.loadError;
     elements['load-error-warning'].textContent = state.settings.loadError
         ? `旧配置读取失败，已显示安全默认值：${state.settings.loadError}`
@@ -295,56 +368,221 @@ function renderSettingsMeta() {
         : '配置已与服务器同步。';
 }
 
-function updateMapTargetState() {
-    const fixed = value('map-mode') === 'fixed';
-
-    elements['target-biome'].disabled = !fixed;
-    elements['target-biome'].required = fixed;
+function applySetupMode() {
+    state.setupMode = state.settings?.configured !== true;
+    elements['main-nav'].hidden = state.setupMode;
+    elements['settings-button'].hidden = state.setupMode;
+    elements['settings-back'].hidden = state.setupMode;
+    elements['settings-title'].textContent = state.setupMode
+        ? '首次设置'
+        : '自动化设置';
+    elements['settings-subtitle'].textContent = state.setupMode
+        ? '保存后进入主面板，再启动自动化。'
+        : '低频配置集中在这里，保存后返回概览。';
+    elements['save-settings'].textContent = state.setupMode
+        ? '保存并进入控制台'
+        : '保存设置';
 }
 
-function formatDate(value) {
-    if (!value) {
-        return '—';
+function setView(view, { force = false } = {}) {
+    const nextView = state.setupMode ? 'settings' : view;
+
+    if (
+        !force &&
+        state.currentView === 'settings' &&
+        nextView !== 'settings' &&
+        state.settingsDirty &&
+        !window.confirm('当前设置尚未保存，确定离开吗？')
+    ) {
+        return;
     }
 
-    return new Intl.DateTimeFormat('zh-CN', {
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-    }).format(new Date(value));
+    state.currentView = nextView;
+    for (const panel of document.querySelectorAll('[data-view-panel]')) {
+        panel.hidden = panel.dataset.viewPanel !== nextView;
+    }
+    for (const button of document.querySelectorAll('.nav-button')) {
+        button.classList.toggle('active', button.dataset.view === nextView);
+    }
+
+    if (nextView === 'logs') {
+        renderLogs();
+    } else if (nextView === 'stats') {
+        renderStats();
+    }
 }
 
-function renderStatus() {
-    const controller = state.controller || { mode: 'stopped', browser: 'closed' };
-    const status = state.status || {};
-    const scheduleMode = controller.engine?.scheduleMode;
+function workerTone(controller, status) {
+    if (controller.mode === 'error' || status.level === 'error') {
+        return 'error';
+    }
 
-    elements['worker-mode'].textContent = WORKER_LABELS[controller.mode] || controller.mode;
-    elements['browser-mode'].textContent = BROWSER_LABELS[controller.browser] || controller.browser;
-    elements['worker-since'].textContent = controller.lastError
-        ? controller.lastError
-        : controller.startedAt
-            ? `启动于 ${formatDate(controller.startedAt)}`
-            : '等待手动启动';
-    elements['schedule-mode'].textContent = `调度：${SCHEDULE_LABELS[scheduleMode] || '—'}`;
-    elements['active-feature'].textContent = status.activeFeature || 'Web 控制面';
-    elements['active-target'].textContent = status.target || '等待配置';
-    elements['cast-count'].textContent = status.castCount || 0;
-    elements['status-updated'].textContent = status.updatedAt
-        ? `更新于 ${formatDate(status.updatedAt)}`
-        : '尚未运行';
+    if (controller.mode === 'paused') {
+        return 'paused';
+    }
+
+    if (status.level === 'waiting') {
+        return 'waiting';
+    }
+
+    return controller.mode === 'running' ? 'running' : 'idle';
+}
+
+function renderOverview() {
+    const controller = state.controller || {
+        mode: 'stopped',
+        browser: 'closed',
+    };
+    const status = state.status || {};
+    const stats = state.stats || {};
+    const today = stats.today || {};
+    const scheduleMode = controller.engine?.scheduleMode;
+    const tone = workerTone(controller, status);
+    const modeLabel = WORKER_LABELS[controller.mode] || controller.mode;
+
+    elements['worker-mode'].textContent = modeLabel;
+    elements['worker-mode'].className = `status-pill ${tone}`;
+    elements['status-dot'].className = `status-dot ${tone}`;
+    elements['status-summary'].textContent = controller.mode === 'running'
+        ? `${modeLabel} · ${status.activeFeature || '自动化'}`
+        : controller.mode === 'paused'
+            ? '自动化已暂停'
+            : controller.mode === 'error'
+                ? 'Worker 运行异常'
+                : modeLabel === '已停止'
+                    ? '自动化已停止'
+                    : modeLabel;
     elements['status-message'].textContent = status.message || '等待操作。';
+    elements['active-feature'].textContent = status.activeFeature || '—';
+    elements['active-target'].textContent = status.target || '—';
+    elements['browser-mode'].textContent =
+        BROWSER_LABELS[controller.browser] || controller.browser || '—';
+    elements['schedule-mode'].textContent =
+        SCHEDULE_LABELS[scheduleMode] || '—';
+    elements['worker-since'].textContent = formatElapsed(controller.startedAt);
+    elements['status-updated'].textContent = formatDate(status.updatedAt);
+    elements['today-casts'].textContent = formatNumber(today.casts, 0);
+    elements['today-gold'].textContent = formatNumber(today.gold);
+    elements['today-xp'].textContent = formatNumber(today.xp);
+    elements['today-fish'].textContent = formatNumber(today.fish, 0);
+
+    const context = stats.lastContext;
+    elements['current-context'].textContent = context
+        ? [
+            context.biomeId ? `Biome ${context.biomeId}` : null,
+            context.baitId ? `鱼饵 ${context.baitId}` : null,
+        ].filter(Boolean).join(' · ')
+        : '暂无收益数据';
+
+    const issue = controller.lastError ||
+        (status.level === 'error' ? status.message : null) ||
+        stats.loadError;
+    elements['issue-card'].hidden = !issue;
+    elements['issue-text'].textContent = issue || '';
 
     const mode = controller.mode;
-    const configured = state.settings?.configured === true;
-    elements['start-button'].disabled = state.busy || !configured || !['stopped', 'error'].includes(mode);
-    elements['pause-button'].disabled = state.busy || mode !== 'running';
-    elements['resume-button'].disabled = state.busy || mode !== 'paused';
-    elements['restart-button'].disabled = state.busy || mode !== 'running';
-    elements['stop-button'].disabled = state.busy || mode === 'stopped';
+    elements['start-button'].hidden = !['stopped', 'error'].includes(mode);
+    elements['pause-button'].hidden = mode !== 'running';
+    elements['resume-button'].hidden = mode !== 'paused';
+    elements['stop-button'].hidden = !['running', 'paused'].includes(mode);
+    elements['start-button'].textContent = mode === 'error'
+        ? '重新启动'
+        : '启动自动化';
+
+    for (const button of document.querySelectorAll('[data-action]')) {
+        button.disabled = state.busy;
+    }
+}
+
+function renderStats() {
+    const snapshot = state.stats || {};
+    const today = snapshot.today || {};
+    const total = snapshot.total || {};
+    const average = today.casts > 0 ? today.gold / today.casts : 0;
+
+    elements['stats-period'].textContent = total.casts > 0
+        ? `累计自 ${formatDate(total.startedAt)}，今日按服务器本地时间统计。`
+        : '等待第一条成功的抛竿响应。';
+    const todayValues = {
+        'stats-today-casts': [today.casts, 0],
+        'stats-today-fish': [today.fish, 0],
+        'stats-today-gold': [today.gold, 2],
+        'stats-today-xp': [today.xp, 2],
+        'stats-today-relics': [today.relics, 0],
+        'stats-today-chests': [today.treasureChests, 0],
+        'stats-today-gears': [today.gears, 0],
+        'stats-gold-average': [average, 2],
+    };
+
+    for (const [id, [number, digits]] of Object.entries(todayValues)) {
+        elements[id].textContent = formatNumber(number, digits);
+    }
+    elements['stats-total-casts'].textContent = formatNumber(total.casts, 0);
+    elements['stats-total-fish'].textContent = formatNumber(total.fish, 0);
+    elements['stats-total-gold'].textContent = formatNumber(total.gold);
+    elements['stats-total-xp'].textContent = formatNumber(total.xp);
+
+    const rarityEntries = Object.entries(today.rarityCounts || {})
+        .sort(([, left], [, right]) => right - left);
+    const rarityFragment = document.createDocumentFragment();
+
+    for (const [rarity, count] of rarityEntries) {
+        const chip = document.createElement('span');
+        const label = document.createElement('span');
+        const amount = document.createElement('strong');
+
+        chip.className = 'rarity-chip';
+        label.textContent = rarity;
+        amount.textContent = formatNumber(count, 0);
+        chip.append(label, amount);
+        rarityFragment.append(chip);
+    }
+
+    if (rarityEntries.length === 0) {
+        const empty = document.createElement('span');
+
+        empty.className = 'muted';
+        empty.textContent = '暂无数据';
+        rarityFragment.append(empty);
+    }
+    elements['rarity-list'].replaceChildren(rarityFragment);
+
+    const dayFragment = document.createDocumentFragment();
+    for (const day of (snapshot.recentDays || []).slice(0, 7)) {
+        const row = document.createElement('tr');
+
+        for (const content of [
+            day.day,
+            formatNumber(day.casts, 0),
+            formatNumber(day.fish, 0),
+            formatNumber(day.gold),
+            formatNumber(day.xp),
+        ]) {
+            const cell = document.createElement('td');
+
+            cell.textContent = content;
+            row.append(cell);
+        }
+        dayFragment.append(row);
+    }
+
+    if ((snapshot.recentDays || []).length === 0) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+
+        cell.colSpan = 5;
+        cell.className = 'muted';
+        cell.textContent = '暂无收益数据';
+        row.append(cell);
+        dayFragment.append(row);
+    }
+    elements['daily-stats-body'].replaceChildren(dayFragment);
+}
+
+function normalizeLogs(logs) {
+    return [...logs]
+        .sort((left, right) => (right.id || 0) - (left.id || 0))
+        .slice(0, LOG_LIMIT);
 }
 
 function addLog(entry) {
@@ -352,9 +590,10 @@ function addLog(entry) {
         return;
     }
 
-    state.logs.push(entry);
-    state.logs = state.logs.slice(-1_500);
-    renderLogs();
+    state.logs = normalizeLogs([entry, ...state.logs]);
+    if (state.currentView === 'logs') {
+        renderLogs();
+    }
 }
 
 function renderLogs() {
@@ -377,7 +616,9 @@ function renderLogs() {
         levelLabel.className = 'log-level';
         levelLabel.textContent = String(entry.level || 'idle').toUpperCase();
         time.textContent = formatDate(entry.updatedAt);
-        feature.textContent = `${entry.activeFeature || '服务'} · ${entry.target || ''}`;
+        feature.textContent = [entry.activeFeature, entry.target]
+            .filter(Boolean)
+            .join(' · ');
         message.className = 'log-message';
         message.textContent = entry.message || '';
         meta.append(levelLabel, time, feature);
@@ -385,25 +626,40 @@ function renderLogs() {
         fragment.append(item);
     }
 
-    elements['log-list'].replaceChildren(fragment);
-    if (elements['auto-scroll'].checked) {
-        elements['log-list'].scrollTop = elements['log-list'].scrollHeight;
+    if (filtered.length === 0) {
+        const empty = document.createElement('div');
+
+        empty.className = 'empty-state';
+        empty.textContent = '当前筛选条件下没有日志。';
+        fragment.append(empty);
     }
+
+    elements['log-list'].replaceChildren(fragment);
+    elements['log-count'].textContent = level === 'all'
+        ? `最新在前，仅显示最近 ${state.logs.length}/${LOG_LIMIT} 条`
+        : `筛选到 ${filtered.length} 条，页面最多保留 ${LOG_LIMIT} 条`;
+}
+
+function renderAll() {
+    renderOverview();
+    renderStats();
+    renderLogs();
+    renderSettingsMeta();
 }
 
 function connectEvents() {
     state.eventSource?.close();
-    const latestLogId = state.logs.at(-1)?.id || 0;
+    const latestLogId = state.logs[0]?.id || 0;
     const source = new EventSource(`/api/events?afterId=${latestLogId}`);
 
     state.eventSource = source;
     source.addEventListener('open', () => {
-        elements['stream-state'].textContent = 'SSE 已连接';
+        elements['stream-state'].textContent = '已连接';
         elements['stream-state'].classList.add('online');
         elements['stream-state'].classList.remove('offline');
     });
     source.addEventListener('error', () => {
-        elements['stream-state'].textContent = 'SSE 重连中';
+        elements['stream-state'].textContent = '重连中';
         elements['stream-state'].classList.remove('online');
         elements['stream-state'].classList.add('offline');
     });
@@ -413,11 +669,16 @@ function connectEvents() {
     });
     source.addEventListener('status', event => {
         state.status = JSON.parse(event.data);
-        renderStatus();
+        renderOverview();
     });
     source.addEventListener('controller', event => {
         state.controller = JSON.parse(event.data);
-        renderStatus();
+        renderOverview();
+    });
+    source.addEventListener('stats', event => {
+        state.stats = JSON.parse(event.data);
+        renderOverview();
+        renderStats();
     });
     source.addEventListener('settings', event => {
         const incoming = JSON.parse(event.data);
@@ -429,8 +690,13 @@ function connectEvents() {
         if (!state.settingsDirty) {
             state.settings = incoming;
             fillSettings(incoming);
+
+            if (state.setupMode && incoming.configured) {
+                applySetupMode();
+                setView('overview', { force: true });
+            }
         } else if (incoming.revision !== state.settings?.revision) {
-            showToast('配置已在其他页面更新，请保存前刷新。', true);
+            showToast('设置已在其他页面更新，请重新进入设置页。', true);
         }
     });
     source.addEventListener('log', event => addLog(JSON.parse(event.data)));
@@ -439,16 +705,19 @@ function connectEvents() {
 async function loadDashboard() {
     const [current, logs] = await Promise.all([
         api('/api/state'),
-        api('/api/logs?limit=500'),
+        api(`/api/logs?limit=${LOG_LIMIT}`),
     ]);
 
     state.status = current.status;
     state.controller = current.controller;
     state.settings = current.settings;
-    state.logs = logs.logs;
+    state.stats = current.stats;
+    state.logs = normalizeLogs(logs.logs);
     fillSettings(state.settings);
-    renderStatus();
-    renderLogs();
+    applySetupMode();
+    showApp();
+    setView(state.setupMode ? 'settings' : 'overview', { force: true });
+    renderAll();
     connectEvents();
 }
 
@@ -467,6 +736,7 @@ elements['login-form'].addEventListener('submit', async event => {
             body: { username },
         });
         const proof = await createLoginProof(password, username, challenge);
+
         state.session = await api('/api/auth/login', {
             method: 'POST',
             body: {
@@ -476,19 +746,28 @@ elements['login-form'].addEventListener('submit', async event => {
             },
         });
         elements['login-password'].value = '';
-        showDashboard();
         await loadDashboard();
     } catch (error) {
         elements['login-error'].textContent = error.message;
     } finally {
         elements['login-button'].disabled = false;
-        elements['login-button'].textContent = '安全登录';
+        elements['login-button'].textContent = '登录';
     }
 });
 
 elements['logout-button'].addEventListener('click', async () => {
     await api('/api/auth/logout', { method: 'POST', body: {} }).catch(() => {});
     showLogin();
+});
+
+for (const button of document.querySelectorAll('.nav-button')) {
+    button.addEventListener('click', () => setView(button.dataset.view));
+}
+elements['settings-button'].addEventListener('click', () => setView('settings'));
+elements['settings-back'].addEventListener('click', () => setView('overview'));
+document.querySelector('.topbar .brand-row').addEventListener('click', event => {
+    event.preventDefault();
+    setView('overview');
 });
 
 elements['settings-form'].addEventListener('input', () => {
@@ -502,6 +781,8 @@ elements['settings-form'].addEventListener('submit', async event => {
     if (!elements['settings-form'].reportValidity()) {
         return;
     }
+
+    const wasSetup = state.settings.configured !== true;
 
     elements['save-settings'].disabled = true;
     elements['save-settings'].textContent = '保存中…';
@@ -519,14 +800,20 @@ elements['settings-form'].addEventListener('submit', async event => {
         state.settings = result;
         state.controller = result.controller;
         fillSettings(result);
-        renderStatus();
-        showToast('配置已保存并应用。');
+        applySetupMode();
+        setView('overview', { force: true });
+        renderAll();
+        showToast(wasSetup
+            ? '设置已保存，现在可以启动自动化。'
+            : '设置已保存并应用。');
     } catch (error) {
         showToast(error.message, true);
     } finally {
         state.savingSettings = false;
         elements['save-settings'].disabled = false;
-        elements['save-settings'].textContent = '保存配置';
+        elements['save-settings'].textContent = state.setupMode
+            ? '保存并进入控制台'
+            : '保存设置';
     }
 });
 
@@ -535,7 +822,7 @@ for (const button of document.querySelectorAll('[data-action]')) {
         const action = button.dataset.action;
 
         state.busy = true;
-        renderStatus();
+        renderOverview();
         try {
             const result = await api(`/api/actions/${action}`, {
                 method: 'POST',
@@ -543,27 +830,22 @@ for (const button of document.querySelectorAll('[data-action]')) {
             });
 
             state.controller = result.controller;
-            renderStatus();
-            showToast(`${button.textContent}操作已完成。`);
+            renderOverview();
+            showToast(ACTION_MESSAGES[action] || '操作已完成。');
         } catch (error) {
             showToast(error.message, true);
         } finally {
             state.busy = false;
-            renderStatus();
+            renderOverview();
         }
     });
 }
 
 elements['log-level'].addEventListener('change', renderLogs);
-elements['clear-logs'].addEventListener('click', () => {
-    state.logs = [];
-    renderLogs();
-});
 
 async function initialize() {
     try {
         state.session = await api('/api/session');
-        showDashboard();
         await loadDashboard();
     } catch {
         showLogin();

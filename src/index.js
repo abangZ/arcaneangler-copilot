@@ -2,6 +2,7 @@ import { config } from './config.js';
 import { AutomationWorker } from './core/automation-worker.js';
 import { LogStore } from './core/log-store.js';
 import { SettingsStore } from './core/settings-store.js';
+import { StatsStore } from './core/stats-store.js';
 import { StatusReporter } from './core/status-reporter.js';
 import { WorkerController } from './core/worker-controller.js';
 import { AuthService } from './web/auth-service.js';
@@ -41,10 +42,12 @@ async function main() {
     const settingsStore = new SettingsStore({
         filePath: config.settingsFile,
     });
+    const statsStore = new StatsStore({ filePath: config.statsFile });
 
     await Promise.all([
         logStore.initialize(),
         settingsStore.initialize(),
+        statsStore.initialize(),
     ]);
 
     reporter = new StatusReporter({ logStore });
@@ -54,6 +57,7 @@ async function main() {
         createWorker: () => new AutomationWorker({
             staticConfig: config,
             settingsStore,
+            statsStore,
             reporter,
         }),
     });
@@ -68,6 +72,7 @@ async function main() {
         port: config.webPort,
         authService,
         settingsStore,
+        statsStore,
         controller,
         reporter,
     });
@@ -88,6 +93,15 @@ async function main() {
             phase: 'web',
             target: '读取网页配置',
             message: `历史配置读取失败，已回退安全默认值：${settingsStore.get().loadError}`,
+        });
+    }
+
+    if (statsStore.get().loadError) {
+        await reporter.log({
+            level: 'error',
+            phase: 'web',
+            target: '读取收益统计',
+            message: `历史收益统计读取失败，已从空统计继续：${statsStore.get().loadError}`,
         });
     }
 }

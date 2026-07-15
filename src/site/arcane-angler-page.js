@@ -32,13 +32,15 @@ export class ArcaneAnglerPage {
         reporter,
         shouldStop,
         canAutomate = () => true,
+        onCastResult = null,
     }) {
-        this.page = page;
         this.config = config;
         this.reporter = reporter;
         this.shouldStop = shouldStop;
         this.canAutomate = canAutomate;
+        this.onCastResult = onCastResult;
         this.pointerPosition = { x: 640, y: 450 };
+        this.attachPage(page);
     }
 
     assertAutomationAllowed() {
@@ -52,8 +54,51 @@ export class ArcaneAnglerPage {
     }
 
     replacePage(page) {
-        this.page = page;
+        this.attachPage(page);
         this.pointerPosition = { x: 640, y: 450 };
+    }
+
+    attachPage(page) {
+        this.page = page;
+        page.on('response', response => {
+            void this.collectCastResponse(response);
+        });
+    }
+
+    async collectCastResponse(response) {
+        if (!this.onCastResult) {
+            return;
+        }
+
+        const request = response.request();
+        const pathname = new URL(response.url()).pathname;
+
+        if (
+            request.method() !== 'POST' ||
+            pathname !== '/api/game/cast' ||
+            !response.ok()
+        ) {
+            return;
+        }
+
+        try {
+            const payload = await response.json();
+
+            if (
+                payload?.success === true &&
+                payload.result &&
+                typeof payload.result === 'object'
+            ) {
+                await this.onCastResult(payload.result);
+            }
+        } catch (error) {
+            await this.reporter.log({
+                level: 'error',
+                phase: 'fishing',
+                target: '读取抛竿收益',
+                message: `无法读取 /cast 响应：${error.message}`,
+            });
+        }
     }
 
     async trustedClick(locator, options) {

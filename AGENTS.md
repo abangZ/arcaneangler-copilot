@@ -13,6 +13,7 @@
 - 自动化配置由 `SettingsStore` 校验并原子持久化到 `.data/settings.json`，`RuntimeSettings` 只向 Engine/features 提供最新只读快照。
 - Web UI 不能直接操作 `ArcaneAnglerPage`；配置更新和启动、暂停、恢复、停止、重启都必须经过 `WorkerController` 的串行命令队列。
 - 主要运行信息统一通过 `StatusReporter` 输出到 stdout/stderr 和 `LogStore`，并通过 SSE 推送结构化状态与日志。
+- 收益统计只观察页面已经产生的 `/api/game/cast` 成功响应，由 `StatsStore` 累计响应增量并持久化；不要为了统计主动调用游戏 API，也不要用账户余额字段代替每竿收益。
 - 不要整体转发页面 console，站点日志可能包含登录响应或令牌。
 - 日志和文档不得输出 `.env` 中的密码或其他敏感数据。
 
@@ -52,6 +53,7 @@ pnpm run smoke:web
 pnpm run smoke:reporter
 pnpm run smoke:fingerprint
 pnpm run smoke:scheduler
+pnpm run smoke:stats
 pnpm run smoke:map
 pnpm run smoke:bait
 pnpm run smoke:verification

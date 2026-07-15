@@ -122,6 +122,7 @@ export class ControlServer {
         port,
         authService,
         settingsStore,
+        statsStore,
         controller,
         reporter,
     }) {
@@ -129,6 +130,7 @@ export class ControlServer {
         this.port = port;
         this.authService = authService;
         this.settingsStore = settingsStore;
+        this.statsStore = statsStore;
         this.controller = controller;
         this.reporter = reporter;
         this.streams = new Set();
@@ -371,6 +373,7 @@ export class ControlServer {
                 status: this.reporter.get(),
                 controller: this.controller.getState(),
                 settings: this.settingsStore.get(),
+                stats: this.statsStore.get(),
             });
             return;
         }
@@ -378,6 +381,12 @@ export class ControlServer {
         if (request.method === 'GET' && pathname === '/api/settings') {
             this.requireSession(request);
             json(response, 200, this.settingsStore.get());
+            return;
+        }
+
+        if (request.method === 'GET' && pathname === '/api/stats') {
+            this.requireSession(request);
+            json(response, 200, this.statsStore.get());
             return;
         }
 
@@ -478,6 +487,7 @@ export class ControlServer {
         writeSse(response, 'status', this.reporter.get());
         writeSse(response, 'controller', this.controller.getState());
         writeSse(response, 'settings', this.settingsStore.get());
+        writeSse(response, 'stats', this.statsStore.get());
 
         const unsubscribeStatus = this.reporter.subscribeStatus(status => {
             writeSse(response, 'status', status);
@@ -491,6 +501,9 @@ export class ControlServer {
         });
         const unsubscribeSettings = this.settingsStore.subscribe(settings => {
             writeSse(response, 'settings', settings);
+        });
+        const unsubscribeStats = this.statsStore.subscribe(stats => {
+            writeSse(response, 'stats', stats);
         });
         const heartbeat = setInterval(() => {
             if (!this.authService.getSession(sessionToken)) {
@@ -508,6 +521,7 @@ export class ControlServer {
             unsubscribeLogs();
             unsubscribeController();
             unsubscribeSettings();
+            unsubscribeStats();
             this.streams.delete(response);
         };
 

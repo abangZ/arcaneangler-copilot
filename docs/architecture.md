@@ -13,7 +13,8 @@ Browser ──> ControlServer ──> WorkerController ──> AutomationWorker
    ▲              │                  │                    │
    │              ├──> SettingsStore ┘                    ├──> AutomationEngine
    │              │                                       │      ├── Scheduler
-   │              └──> SSE <── StatusReporter <────────────┤      └── Features
+   │              ├──> StatsStore <── /cast response <────┤      └── Features
+   │              └──> SSE <── StatusReporter <────────────┤
    │                         └── LogStore                   │
    └───────────────────────────────────────────────────────┴──> ArcaneAnglerPage
 ```
@@ -83,12 +84,15 @@ POST /api/auth/logout
 GET  /api/state
 GET  /api/settings
 PUT  /api/settings
+GET  /api/stats
 GET  /api/logs
 GET  /api/events
 POST /api/actions/start|pause|resume|stop|restart
 ```
 
-SSE 事件分为 `status`、`controller`、`settings`、`log` 和会话过期时的 `auth`。日志事件带递增 ID；首次连接从已加载日志的最新 ID 继续，后续通过 `Last-Event-ID` 断线补发；每 15 秒发送 heartbeat。
+SSE 事件分为 `status`、`controller`、`settings`、`stats`、`log` 和会话过期时的 `auth`。日志事件带递增 ID；首次连接从已加载日志的最新 ID 继续，后续通过 `Last-Event-ID` 断线补发；每 15 秒发送 heartbeat。
+
+前端信息架构按使用频率划分：未配置账户只显示首次设置页；完成配置后进入概览，收益和日志使用一级导航，设置由右上角入口进入。概览只显示运行控制、当前任务、运行环境和今日核心收益。日志在浏览器内倒序保留最近 200 条。
 
 ## Worker 生命周期
 
@@ -118,6 +122,7 @@ stopped -> starting -> running -> pausing -> paused
 - quiet hours 的 `browserLifecycle.suspend/resume` 只关闭和重建 Playwright，不影响 Web 服务。
 - `session.replacePage()` 保证恢复后所有 feature 使用新的页面引用。
 - 页面脚本异常通过 `StatusReporter.log()` 记录，不整体转发页面 console。
+- 把 `StatsStore` 回调交给页面 adapter，Worker 和 HTTP handler 不解析游戏响应字段。
 
 ### `src/core/automation-engine.js`
 
@@ -137,6 +142,8 @@ stopped -> starting -> running -> pausing -> paused
 ## 页面与 Feature 边界
 
 `ArcaneAnglerPage` 继续封装所有 DOM Locator 和页面响应细节。普通点击必须使用 Playwright `Locator.click()`，禁止在页面上下文调用 `HTMLElement.click()`。Human Verification 可以使用真实鼠标移动、点击和拖动。
+
+页面 adapter 监听页面自己产生的 `POST /api/game/cast` 成功响应，只把 `payload.result` 交给 `StatsStore`。该监听不会发起额外游戏请求，也不会改变页面对响应的消费。
 
 feature 只编排语义操作：
 
@@ -163,6 +170,13 @@ HTTP API 和 Web UI 不得直接持有 DOM Locator，也不得绕过 Engine queu
 - 启动时加载最近 7 个日志文件，并从历史最大 ID 继续递增。
 - 单条损坏日志不会阻止 Web 控制面启动。
 
+### `src/core/stats-store.js`
+
+- 只累计 `/cast` 的 `goldGained`、`xpGained`、`relicsGained`、鱼获数量、宝箱、装备和稀有度分类等每竿增量。
+- 同时维护累计值和按服务器本地日期划分的每日值，保留最近 90 个每日汇总。
+- 数据原子写入 `.data/stats.json`，权限固定为 `0600`。
+- Web 读取当前快照，并通过 `stats` SSE 事件实时更新；统计写入失败不阻断自动化循环。
+
 ## 关闭流程
 
 SIGINT / SIGTERM 的顺序是：
@@ -173,9 +187,10 @@ SIGINT / SIGTERM 的顺序是：
 
 ## 验证
 
-- `pnpm run smoke:web`：challenge 登录、session/CSRF、配置持久化、SSE 和 Worker 控制。
+- `pnpm run smoke:web`：challenge 登录、session/CSRF、配置持久化、收益 API、SSE 和 Worker 控制。
 - `pnpm run smoke:reporter`：运行配置快照、结构化输出和重复抑制。
 - `pnpm run smoke:scheduler`：active/rest/quiet 和浏览器 suspend/resume。
+- `pnpm run smoke:stats`：`/cast` 响应解析、每日/累计收益和持久化。
 - `pnpm run smoke:map`：Derby 报名、地图算法和可信点击。
 - `pnpm run smoke:bait`：跨地图档位、购买、装备和库存处理。
 - `pnpm run smoke:verification`：真实鼠标验证事件。

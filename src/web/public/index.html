@@ -11,294 +11,272 @@
     <main class="shell">
         <section id="login-view" class="login-layout">
             <div class="login-card panel">
-                <div class="brand-mark">AA</div>
-                <p class="eyebrow">SERVER CONTROL</p>
-                <h1>Arcane Angler Copilot</h1>
-                <p class="muted">登录后配置并启动服务器上的自动化 Worker。</p>
+                <div class="brand-row">
+                    <span class="brand-mark">AA</span>
+                    <span>Arcane Angler Copilot</span>
+                </div>
+                <h1>登录控制台</h1>
+                <p class="muted">管理服务器上的钓鱼 Worker。</p>
                 <form id="login-form" class="stack">
                     <label>
-                        <span>Arcane Angler 登录用户名</span>
-                        <input id="login-username" name="username" autocomplete="username" required>
+                        <span>用户名</span>
+                        <input id="login-username" autocomplete="username" required>
                     </label>
                     <label>
                         <span>密码</span>
-                        <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+                        <input id="login-password" type="password" autocomplete="current-password" required>
                     </label>
-                    <button id="login-button" class="button primary" type="submit">安全登录</button>
+                    <button id="login-button" class="button primary" type="submit">登录</button>
                     <p id="login-error" class="form-error" role="alert"></p>
                 </form>
-                <p class="security-note">密码通过一次性 PBKDF2 + HMAC challenge 验证，不会作为请求正文发送。远程访问仍应配置 HTTPS。</p>
+                <p class="security-note">密码不会作为请求正文发送。远程访问请使用 HTTPS。</p>
             </div>
         </section>
 
-        <section id="dashboard-view" hidden>
+        <section id="app-view" hidden>
             <header class="topbar">
-                <div>
-                    <p class="eyebrow">ARCANE ANGLER</p>
-                    <h1>Copilot 控制台</h1>
-                </div>
+                <a class="brand-row" href="#overview" aria-label="返回概览">
+                    <span class="brand-mark small">AA</span>
+                    <span>Copilot</span>
+                </a>
+                <nav id="main-nav" class="main-nav" aria-label="主导航">
+                    <button class="nav-button" data-view="overview" type="button">概览</button>
+                    <button class="nav-button" data-view="stats" type="button">收益</button>
+                    <button class="nav-button" data-view="logs" type="button">日志</button>
+                </nav>
                 <div class="topbar-actions">
-                    <span id="stream-state" class="connection offline">SSE 连接中</span>
+                    <span id="stream-state" class="connection offline">连接中</span>
                     <span id="session-user" class="user-chip"></span>
-                    <button id="logout-button" class="button ghost" type="button">退出</button>
+                    <button id="settings-button" class="icon-button" type="button" aria-label="设置">设置</button>
+                    <button id="logout-button" class="button ghost small" type="button">退出</button>
                 </div>
             </header>
 
-            <div id="transport-warning" class="warning" hidden>
-                当前通过 HTTP 访问。对外开放前请使用 Caddy、Nginx 或 Tailscale 配置 HTTPS。
+            <div id="transport-warning" class="notice warning" hidden>
+                当前使用 HTTP。公网访问前请配置 HTTPS。
             </div>
-            <div id="configuration-warning" class="warning info" hidden>
-                首次使用请先检查并保存配置，然后点击“启动”。保存配置不会自动启动 Playwright。
-            </div>
-            <div id="load-error-warning" class="warning danger" hidden></div>
 
-            <section class="status-grid" aria-label="运行状态">
-                <article class="metric panel">
-                    <span>Worker</span>
-                    <strong id="worker-mode">已停止</strong>
-                    <small id="worker-since">等待手动启动</small>
-                </article>
-                <article class="metric panel">
-                    <span>浏览器</span>
-                    <strong id="browser-mode">已关闭</strong>
-                    <small id="schedule-mode">调度：—</small>
-                </article>
-                <article class="metric panel wide">
-                    <span>当前任务</span>
-                    <strong id="active-feature">Web 控制面</strong>
-                    <small id="active-target">等待配置</small>
-                </article>
-                <article class="metric panel">
-                    <span>累计抛竿</span>
-                    <strong id="cast-count">0</strong>
-                    <small id="status-updated">尚未运行</small>
-                </article>
-            </section>
-
-            <section class="panel control-panel">
-                <div>
-                    <p class="eyebrow">WORKER CONTROL</p>
-                    <h2>运行控制</h2>
-                    <p id="status-message" class="muted">Web 控制面已启动，Playwright 尚未运行。</p>
-                </div>
-                <div class="control-actions">
-                    <button id="start-button" class="button primary" data-action="start" type="button">启动</button>
-                    <button id="pause-button" class="button" data-action="pause" type="button">暂停</button>
-                    <button id="resume-button" class="button" data-action="resume" type="button">恢复</button>
-                    <button id="restart-button" class="button" data-action="restart" type="button">重启 Worker</button>
-                    <button id="stop-button" class="button danger" data-action="stop" type="button">停止</button>
-                </div>
-            </section>
-
-            <div class="content-grid">
-                <form id="settings-form" class="panel settings-panel">
-                    <div class="section-heading">
-                        <div>
-                            <p class="eyebrow">CONFIGURATION</p>
-                            <h2>自动化配置</h2>
-                        </div>
-                        <span id="settings-revision" class="revision">未保存</span>
+            <section id="overview-view" class="view" data-view-panel="overview" hidden>
+                <div class="page-heading">
+                    <div>
+                        <h1>运行概览</h1>
+                        <p class="muted">当前状态和今天的收益。</p>
                     </div>
+                    <span id="worker-mode" class="status-pill">已停止</span>
+                </div>
 
-                    <fieldset>
-                        <legend>角色与浏览器</legend>
+                <section class="panel runtime-card">
+                    <div class="runtime-copy">
+                        <span id="status-dot" class="status-dot"></span>
+                        <div>
+                            <strong id="status-summary">等待启动</strong>
+                            <p id="status-message" class="muted">配置完成后即可启动自动化。</p>
+                        </div>
+                    </div>
+                    <div class="control-actions">
+                        <button id="start-button" class="button primary" data-action="start" type="button">启动自动化</button>
+                        <button id="pause-button" class="button" data-action="pause" type="button" hidden>暂停</button>
+                        <button id="resume-button" class="button primary" data-action="resume" type="button" hidden>恢复</button>
+                        <button id="stop-button" class="button danger" data-action="stop" type="button" hidden>停止</button>
+                    </div>
+                </section>
+
+                <section class="kpi-grid" aria-label="今日收益">
+                    <article class="kpi panel">
+                        <span>今日抛竿</span>
+                        <strong id="today-casts">0</strong>
+                    </article>
+                    <article class="kpi panel">
+                        <span>今日金币</span>
+                        <strong id="today-gold">0</strong>
+                    </article>
+                    <article class="kpi panel">
+                        <span>今日经验</span>
+                        <strong id="today-xp">0</strong>
+                    </article>
+                    <article class="kpi panel">
+                        <span>今日鱼获</span>
+                        <strong id="today-fish">0</strong>
+                    </article>
+                </section>
+
+                <div class="overview-grid">
+                    <section class="panel detail-card">
+                        <h2>当前任务</h2>
+                        <dl class="detail-list">
+                            <div><dt>功能</dt><dd id="active-feature">Web 控制面</dd></div>
+                            <div><dt>目标</dt><dd id="active-target">等待启动</dd></div>
+                            <div><dt>地图 / 鱼饵</dt><dd id="current-context">暂无收益数据</dd></div>
+                        </dl>
+                    </section>
+                    <section class="panel detail-card">
+                        <h2>运行环境</h2>
+                        <dl class="detail-list">
+                            <div><dt>浏览器</dt><dd id="browser-mode">已关闭</dd></div>
+                            <div><dt>调度</dt><dd id="schedule-mode">—</dd></div>
+                            <div><dt>运行时间</dt><dd id="worker-since">尚未启动</dd></div>
+                            <div><dt>最后更新</dt><dd id="status-updated">—</dd></div>
+                        </dl>
+                    </section>
+                </div>
+
+                <div id="issue-card" class="notice danger" hidden>
+                    <strong>需要处理</strong>
+                    <span id="issue-text"></span>
+                </div>
+            </section>
+
+            <section id="stats-view" class="view" data-view-panel="stats" hidden>
+                <div class="page-heading">
+                    <div>
+                        <h1>收益统计</h1>
+                        <p id="stats-period" class="muted">等待第一条抛竿结果。</p>
+                    </div>
+                </div>
+
+                <section class="kpi-grid stats-kpis">
+                    <article class="kpi panel"><span>今日抛竿</span><strong id="stats-today-casts">0</strong></article>
+                    <article class="kpi panel"><span>鱼获</span><strong id="stats-today-fish">0</strong></article>
+                    <article class="kpi panel"><span>金币</span><strong id="stats-today-gold">0</strong></article>
+                    <article class="kpi panel"><span>经验</span><strong id="stats-today-xp">0</strong></article>
+                    <article class="kpi panel"><span>遗物</span><strong id="stats-today-relics">0</strong></article>
+                    <article class="kpi panel"><span>宝箱</span><strong id="stats-today-chests">0</strong></article>
+                    <article class="kpi panel"><span>装备</span><strong id="stats-today-gears">0</strong></article>
+                    <article class="kpi panel"><span>每竿金币</span><strong id="stats-gold-average">0</strong></article>
+                </section>
+
+                <div class="stats-layout">
+                    <section class="panel detail-card">
+                        <h2>累计收益</h2>
+                        <dl class="detail-list compact">
+                            <div><dt>抛竿</dt><dd id="stats-total-casts">0</dd></div>
+                            <div><dt>鱼获</dt><dd id="stats-total-fish">0</dd></div>
+                            <div><dt>金币</dt><dd id="stats-total-gold">0</dd></div>
+                            <div><dt>经验</dt><dd id="stats-total-xp">0</dd></div>
+                        </dl>
+                    </section>
+                    <section class="panel detail-card">
+                        <h2>今日收获分类</h2>
+                        <div id="rarity-list" class="rarity-list">
+                            <span class="muted">暂无数据</span>
+                        </div>
+                    </section>
+                </div>
+
+                <section class="panel history-card">
+                    <h2>最近 7 天</h2>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>日期</th><th>抛竿</th><th>鱼获</th><th>金币</th><th>经验</th></tr></thead>
+                            <tbody id="daily-stats-body"></tbody>
+                        </table>
+                    </div>
+                </section>
+            </section>
+
+            <section id="logs-view" class="view" data-view-panel="logs" hidden>
+                <div class="page-heading">
+                    <div>
+                        <h1>运行日志</h1>
+                        <p id="log-count" class="muted">显示最近 0 条</p>
+                    </div>
+                    <label class="inline-field">
+                        <span>级别</span>
+                        <select id="log-level">
+                            <option value="all">全部</option>
+                            <option value="error">错误</option>
+                            <option value="paused">暂停</option>
+                            <option value="waiting">等待</option>
+                            <option value="running">运行</option>
+                            <option value="idle">空闲</option>
+                        </select>
+                    </label>
+                </div>
+                <div id="log-list" class="panel log-list" aria-live="polite"></div>
+            </section>
+
+            <section id="settings-view" class="view settings-view" data-view-panel="settings" hidden>
+                <div class="page-heading settings-heading">
+                    <div>
+                        <h1 id="settings-title">设置</h1>
+                        <p id="settings-subtitle" class="muted">修改后保存即可生效。</p>
+                    </div>
+                    <button id="settings-back" class="button ghost" type="button">返回概览</button>
+                </div>
+
+                <div id="load-error-warning" class="notice danger" hidden></div>
+
+                <form id="settings-form" class="panel settings-form">
+                    <section class="settings-section">
+                        <div class="section-title"><h2>常用设置</h2><span id="settings-revision" class="revision">未保存</span></div>
                         <div class="form-grid">
-                            <label>
-                                <span>角色名</span>
-                                <input id="character" placeholder="留空选择第一个角色">
-                            </label>
-                            <label class="toggle-row">
-                                <span>无头模式</span>
-                                <input id="headless" type="checkbox">
-                            </label>
+                            <label><span>角色名</span><input id="character" placeholder="留空选择第一个角色"></label>
+                            <label class="toggle-row"><span>无头模式</span><input id="headless" type="checkbox"></label>
+                            <label class="toggle-row"><span>自动钓鱼</span><input id="fishing-enabled" type="checkbox"></label>
+                            <label class="toggle-row"><span>强制经典模式</span><input id="classic-mode" type="checkbox"></label>
+                            <label><span>最短点击延迟（ms）</span><input id="click-delay-min" type="number" min="0" max="60000" required></label>
+                            <label><span>最长点击延迟（ms）</span><input id="click-delay-max" type="number" min="0" max="60000" required></label>
                         </div>
-                        <p class="field-help">修改角色名或无头模式时，运行中的 Worker 会自动安全重建。</p>
-                    </fieldset>
+                    </section>
 
-                    <fieldset>
-                        <legend>自动钓鱼</legend>
-                        <div class="form-grid">
-                            <label class="toggle-row">
-                                <span>启用自动钓鱼</span>
-                                <input id="fishing-enabled" type="checkbox">
-                            </label>
-                            <label class="toggle-row">
-                                <span>强制经典模式</span>
-                                <input id="classic-mode" type="checkbox">
-                            </label>
-                            <label>
-                                <span>最短点击延迟（ms）</span>
-                                <input id="click-delay-min" type="number" min="0" max="60000" required>
-                            </label>
-                            <label>
-                                <span>最长点击延迟（ms）</span>
-                                <input id="click-delay-max" type="number" min="0" max="60000" required>
-                            </label>
-                        </div>
-                    </fieldset>
-
-                    <fieldset>
-                        <legend>地图与 Events</legend>
-                        <div class="form-grid">
-                            <label>
-                                <span>地图模式</span>
-                                <select id="map-mode">
-                                    <option value="off">关闭</option>
-                                    <option value="fixed">固定地图</option>
-                                    <option value="auto">自动选择</option>
-                                </select>
-                            </label>
-                            <label>
-                                <span>目标 Biome</span>
-                                <input id="target-biome" type="number" min="1" max="999" placeholder="固定模式必填">
-                            </label>
-                            <label>
-                                <span>Events / 地图检查间隔（分钟）</span>
-                                <input id="map-check-minutes" type="number" min="1" max="1440" required>
-                            </label>
-                        </div>
-                    </fieldset>
-
-                    <fieldset>
-                        <legend>自动鱼饵</legend>
-                        <div class="form-grid">
-                            <label class="toggle-row">
-                                <span>启用自动鱼饵</span>
-                                <input id="bait-enabled" type="checkbox">
-                            </label>
-                            <label>
-                                <span>鱼饵档位</span>
-                                <select id="bait-tier">
-                                    <option value="0">0 · 基础鱼饵</option>
-                                    <option value="1">1</option>
-                                    <option value="2">2</option>
-                                    <option value="3">3</option>
-                                    <option value="4">4</option>
-                                </select>
-                            </label>
-                            <label>
-                                <span>补货阈值</span>
-                                <input id="bait-threshold" type="number" min="0" max="999999" required>
-                            </label>
-                            <label>
-                                <span>每次购买数量</span>
-                                <input id="bait-quantity" type="number" min="100" max="999900" step="100" required>
-                            </label>
-                            <label>
-                                <span>检查间隔（秒）</span>
-                                <input id="bait-check-seconds" type="number" min="5" max="3600" required>
-                            </label>
-                        </div>
-                    </fieldset>
-
-                    <fieldset>
-                        <legend>运行计划</legend>
-                        <div class="form-grid four">
-                            <label>
-                                <span>运行最短（分钟）</span>
-                                <input id="active-min" type="number" min="1" max="1440" required>
-                            </label>
-                            <label>
-                                <span>运行最长（分钟）</span>
-                                <input id="active-max" type="number" min="1" max="1440" required>
-                            </label>
-                            <label>
-                                <span>休息最短（分钟）</span>
-                                <input id="rest-min" type="number" min="1" max="1440" required>
-                            </label>
-                            <label>
-                                <span>休息最长（分钟）</span>
-                                <input id="rest-max" type="number" min="1" max="1440" required>
-                            </label>
-                            <label>
-                                <span>夜间停机开始（时）</span>
-                                <input id="quiet-start" type="number" min="0" max="23" required>
-                            </label>
-                            <label>
-                                <span>夜间停机结束（时）</span>
-                                <input id="quiet-end" type="number" min="0" max="23" required>
-                            </label>
-                        </div>
-                    </fieldset>
-
-                    <fieldset>
-                        <legend>Human Verification</legend>
-                        <div class="form-grid">
-                            <label class="toggle-row">
-                                <span>启用自动验证</span>
-                                <input id="verification-enabled" type="checkbox">
-                            </label>
-                            <label>
-                                <span>最短步骤延迟（ms）</span>
-                                <input id="verification-delay-min" type="number" min="100" max="60000" required>
-                            </label>
-                            <label>
-                                <span>最长步骤延迟（ms）</span>
-                                <input id="verification-delay-max" type="number" min="100" max="60000" required>
-                            </label>
-                            <label>
-                                <span>最大尝试次数</span>
-                                <input id="verification-attempts" type="number" min="1" max="20" required>
-                            </label>
-                        </div>
-                    </fieldset>
-
-                    <details>
-                        <summary>高级恢复配置</summary>
-                        <div class="form-grid advanced-grid">
-                            <label>
-                                <span>轮询间隔（ms）</span>
-                                <input id="poll-interval" type="number" min="50" max="60000" required>
-                            </label>
-                            <label>
-                                <span>停滞超时（秒）</span>
-                                <input id="stall-timeout-seconds" type="number" min="10" max="86400" required>
-                            </label>
-                            <label>
-                                <span>页面操作超时（秒）</span>
-                                <input id="navigation-timeout-seconds" type="number" min="5" max="300" required>
-                            </label>
-                            <label>
-                                <span>连续错误恢复阈值</span>
-                                <input id="recovery-error-count" type="number" min="1" max="100" required>
-                            </label>
+                    <details open>
+                        <summary>地图与 Events</summary>
+                        <div class="form-grid details-content">
+                            <label><span>地图模式</span><select id="map-mode"><option value="off">关闭</option><option value="fixed">固定地图</option><option value="auto">自动选择</option></select></label>
+                            <label><span>目标 Biome</span><input id="target-biome" type="number" min="1" max="999" placeholder="固定模式必填"></label>
+                            <label><span>检查间隔（分钟）</span><input id="map-check-minutes" type="number" min="1" max="1440" required></label>
                         </div>
                     </details>
 
-                    <div class="save-bar">
-                        <span id="settings-note" class="muted">修改只保存在服务器，不会包含账户密码。</span>
-                        <button id="save-settings" class="button primary" type="submit">保存配置</button>
-                    </div>
-                </form>
-
-                <section class="panel logs-panel">
-                    <div class="section-heading">
-                        <div>
-                            <p class="eyebrow">LIVE STREAM</p>
-                            <h2>实时日志</h2>
+                    <details>
+                        <summary>自动鱼饵</summary>
+                        <div class="form-grid details-content">
+                            <label class="toggle-row"><span>启用自动鱼饵</span><input id="bait-enabled" type="checkbox"></label>
+                            <label><span>鱼饵档位</span><select id="bait-tier"><option value="0">0 · 基础鱼饵</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
+                            <label><span>补货阈值</span><input id="bait-threshold" type="number" min="0" max="999999" required></label>
+                            <label><span>每次购买数量</span><input id="bait-quantity" type="number" min="100" max="999900" step="100" required></label>
+                            <label><span>检查间隔（秒）</span><input id="bait-check-seconds" type="number" min="5" max="3600" required></label>
                         </div>
-                        <button id="clear-logs" class="button ghost small" type="button">清空视图</button>
-                    </div>
-                    <div class="log-toolbar">
-                        <label>
-                            <span>级别</span>
-                            <select id="log-level">
-                                <option value="all">全部</option>
-                                <option value="error">错误</option>
-                                <option value="paused">暂停</option>
-                                <option value="waiting">等待</option>
-                                <option value="running">运行</option>
-                                <option value="idle">空闲</option>
-                            </select>
-                        </label>
-                        <label class="toggle-row compact">
-                            <span>自动滚动</span>
-                            <input id="auto-scroll" type="checkbox" checked>
-                        </label>
-                    </div>
-                    <div id="log-list" class="log-list" aria-live="polite"></div>
-                </section>
-            </div>
+                    </details>
+
+                    <details>
+                        <summary>运行计划</summary>
+                        <div class="form-grid details-content">
+                            <label><span>运行最短（分钟）</span><input id="active-min" type="number" min="1" max="1440" required></label>
+                            <label><span>运行最长（分钟）</span><input id="active-max" type="number" min="1" max="1440" required></label>
+                            <label><span>休息最短（分钟）</span><input id="rest-min" type="number" min="1" max="1440" required></label>
+                            <label><span>休息最长（分钟）</span><input id="rest-max" type="number" min="1" max="1440" required></label>
+                            <label><span>夜间停机开始（时）</span><input id="quiet-start" type="number" min="0" max="23" required></label>
+                            <label><span>夜间停机结束（时）</span><input id="quiet-end" type="number" min="0" max="23" required></label>
+                        </div>
+                    </details>
+
+                    <details>
+                        <summary>Human Verification</summary>
+                        <div class="form-grid details-content">
+                            <label class="toggle-row"><span>启用自动验证</span><input id="verification-enabled" type="checkbox"></label>
+                            <label><span>最短步骤延迟（ms）</span><input id="verification-delay-min" type="number" min="100" max="60000" required></label>
+                            <label><span>最长步骤延迟（ms）</span><input id="verification-delay-max" type="number" min="100" max="60000" required></label>
+                            <label><span>最大尝试次数</span><input id="verification-attempts" type="number" min="1" max="20" required></label>
+                        </div>
+                    </details>
+
+                    <details>
+                        <summary>高级恢复</summary>
+                        <div class="form-grid details-content">
+                            <label><span>轮询间隔（ms）</span><input id="poll-interval" type="number" min="50" max="60000" required></label>
+                            <label><span>停滞超时（秒）</span><input id="stall-timeout-seconds" type="number" min="10" max="86400" required></label>
+                            <label><span>页面操作超时（秒）</span><input id="navigation-timeout-seconds" type="number" min="5" max="300" required></label>
+                            <label><span>连续错误恢复阈值</span><input id="recovery-error-count" type="number" min="1" max="100" required></label>
+                        </div>
+                    </details>
+
+                    <footer class="save-bar">
+                        <span id="settings-note" class="muted">配置已与服务器同步。</span>
+                        <button id="save-settings" class="button primary" type="submit">保存设置</button>
+                    </footer>
+                </form>
+            </section>
         </section>
     </main>
 
