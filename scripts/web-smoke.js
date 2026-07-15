@@ -191,8 +191,16 @@ try {
         assert.match(pageHtml, /data-view="stats"/);
         assert.match(pageHtml, /data-view="logs"/);
         assert.match(pageHtml, /id="settings-view"/);
+        assert.match(pageHtml, /id="current-bait-name"/);
+        assert.match(pageHtml, /id="player-level"/);
+        assert.match(pageHtml, /id="last-fish-name"/);
+        assert.match(pageHtml, /id="bait-stats-body"/);
+        assert.match(pageHtml, /id="biome-stats-body"/);
+        assert.match(pageHtml, /id="breakdown-stats-body"/);
         const appSource = await (await fetch(`${origin}/app.js`)).text();
         assert.match(appSource, /const LOG_LIMIT = 200/);
+        assert.match(appSource, /const RARITY_DISPLAY/);
+        assert.match(appSource, /function estimateLevelUp/);
         assert.match(appSource, /保存并进入控制台/);
 
         result = await login(
@@ -361,6 +369,9 @@ try {
         assert.equal(result.body.today.casts, 1);
         assert.equal(result.body.today.gold, 97);
         assert.equal(result.body.lastContext.biomeId, '2');
+        assert.equal(result.body.baitSummaries[0].baitId, 'bait-2');
+        assert.equal(result.body.todayBaitSummaries[0].casts, 1);
+        assert.equal(result.body.lastFish.name, 'Web Smoke Fish');
 
         const abortController = new AbortController();
         const streamResponse = await fetch(`${origin}/api/events`, {

@@ -6,16 +6,28 @@ const elementIds = [
     'login-button', 'login-error', 'app-view', 'main-nav', 'session-user',
     'stream-state', 'transport-warning', 'settings-button', 'logout-button',
     'overview-view', 'stats-view', 'logs-view', 'settings-view',
-    'worker-mode', 'status-dot', 'status-summary', 'status-message',
+    'worker-mode', 'status-dot', 'status-message',
     'start-button', 'pause-button', 'resume-button', 'stop-button',
     'today-casts', 'today-gold', 'today-xp', 'today-fish',
-    'active-feature', 'active-target', 'current-context', 'browser-mode',
+    'current-bait-name', 'current-bait-context',
+    'current-bait-today-casts', 'current-bait-today-fish',
+    'current-bait-today-gold', 'current-bait-today-net',
+    'current-bait-total-casts', 'current-bait-total-gold',
+    'current-bait-total-net', 'current-bait-total-xp',
+    'player-level', 'player-xp-percent', 'player-xp-bar', 'player-xp-text',
+    'level-eta', 'current-biome', 'current-biome-effect',
+    'last-fish-empty', 'last-fish-content', 'last-fish-rarity',
+    'last-fish-name', 'last-fish-meta', 'last-fish-reward',
+    'last-fish-context', 'last-fish-time',
+    'active-feature', 'active-target', 'browser-mode',
     'schedule-mode', 'worker-since', 'status-updated', 'issue-card',
     'issue-text', 'stats-period', 'stats-today-casts', 'stats-today-fish',
     'stats-today-gold', 'stats-today-xp', 'stats-today-relics',
     'stats-today-chests', 'stats-today-gears', 'stats-gold-average',
     'stats-total-casts', 'stats-total-fish', 'stats-total-gold',
-    'stats-total-xp', 'rarity-list', 'daily-stats-body', 'log-count',
+    'stats-total-xp', 'stats-total-bait-cost', 'stats-total-net-gold',
+    'rarity-list', 'daily-stats-body', 'bait-stats-body',
+    'biome-stats-body', 'breakdown-stats-body', 'log-count',
     'log-level', 'log-list', 'settings-title', 'settings-subtitle',
     'settings-back', 'load-error-warning', 'settings-form',
     'settings-revision', 'settings-note', 'save-settings', 'character',
@@ -75,6 +87,30 @@ const ACTION_MESSAGES = {
     resume: '自动化已恢复。',
     stop: '自动化已停止。',
 };
+const RARITY_DISPLAY = Object.freeze({
+    unknown: { label: '未知', tone: 'unknown' },
+    common: { label: '普通', tone: 'common' },
+    uncommon: { label: '罕见', tone: 'uncommon' },
+    fine: { label: '精良', tone: 'fine' },
+    rare: { label: '稀有', tone: 'rare' },
+    epic: { label: '史诗', tone: 'epic' },
+    legendary: { label: '传说', tone: 'legendary' },
+    mythic: { label: '神话', tone: 'mythic' },
+    exotic: { label: '奇异', tone: 'exotic' },
+    arcane: { label: '奥术', tone: 'arcane' },
+    relic: { label: '遗物', tone: 'relic' },
+    'treasure chest': { label: '宝箱', tone: 'treasure' },
+    gears: { label: '装备', tone: 'gear' },
+});
+const WEATHER_LABELS = Object.freeze({
+    clear: '晴朗',
+    storm: '暴风雨',
+    foggy: '雾天',
+    rain: '降雨',
+    heatwave: '热浪',
+    windy: '大风',
+    snow: '降雪',
+});
 
 function base64UrlToBytes(value) {
     const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
@@ -254,6 +290,95 @@ function formatElapsed(value) {
     return hours > 0
         ? `${hours} 小时 ${minutes % 60} 分钟`
         : `${minutes} 分钟`;
+}
+
+function rarityDisplay(value) {
+    const key = String(value || 'unknown').trim().toLowerCase();
+
+    return RARITY_DISPLAY[key] || {
+        label: String(value || '未知'),
+        tone: 'unknown',
+    };
+}
+
+function formatEstimate(milliseconds) {
+    if (!Number.isFinite(milliseconds) || milliseconds < 0) {
+        return '—';
+    }
+
+    const minutes = Math.max(1, Math.ceil(milliseconds / 60_000));
+
+    if (minutes < 60) {
+        return `约 ${minutes} 分钟`;
+    }
+
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+
+    if (hours < 24) {
+        return remainingMinutes > 0
+            ? `约 ${hours} 小时 ${remainingMinutes} 分钟`
+            : `约 ${hours} 小时`;
+    }
+
+    const days = Math.floor(hours / 24);
+    const remainingHours = hours % 24;
+    return remainingHours > 0
+        ? `约 ${days} 天 ${remainingHours} 小时`
+        : `约 ${days} 天`;
+}
+
+function estimateLevelUp(dashboard, today) {
+    const xp = Number(dashboard?.xp);
+    const xpToNext = Number(dashboard?.xpToNext);
+    const earnedXp = Number(today?.xp);
+    const startedAt = Date.parse(today?.startedAt);
+
+    if (
+        !Number.isFinite(xp) ||
+        !Number.isFinite(xpToNext) ||
+        xpToNext <= 0 ||
+        !Number.isFinite(earnedXp) ||
+        earnedXp <= 0 ||
+        !Number.isFinite(startedAt)
+    ) {
+        return null;
+    }
+
+    const remainingXp = Math.max(0, xpToNext - xp);
+    const elapsedMs = Math.max(60_000, Date.now() - startedAt);
+    const xpPerMs = earnedXp / elapsedMs;
+
+    return xpPerMs > 0 ? remainingXp / xpPerMs : null;
+}
+
+function replaceTableRows(body, rows, { colspan, emptyMessage }) {
+    const fragment = document.createDocumentFragment();
+
+    for (const values of rows) {
+        const row = document.createElement('tr');
+
+        for (const content of values) {
+            const cell = document.createElement('td');
+
+            cell.textContent = content;
+            row.append(cell);
+        }
+        fragment.append(row);
+    }
+
+    if (rows.length === 0) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+
+        cell.colSpan = colspan;
+        cell.className = 'muted';
+        cell.textContent = emptyMessage;
+        row.append(cell);
+        fragment.append(row);
+    }
+
+    body.replaceChildren(fragment);
 }
 
 function fillSettings(snapshot) {
@@ -439,22 +564,14 @@ function renderOverview() {
     const status = state.status || {};
     const stats = state.stats || {};
     const today = stats.today || {};
+    const dashboard = status.dashboard || controller.engine?.dashboard || null;
     const scheduleMode = controller.engine?.scheduleMode;
     const tone = workerTone(controller, status);
     const modeLabel = WORKER_LABELS[controller.mode] || controller.mode;
 
     elements['worker-mode'].textContent = modeLabel;
-    elements['worker-mode'].className = `status-pill ${tone}`;
+    elements['worker-mode'].className = `runtime-mode ${tone}`;
     elements['status-dot'].className = `status-dot ${tone}`;
-    elements['status-summary'].textContent = controller.mode === 'running'
-        ? `${modeLabel} · ${status.activeFeature || '自动化'}`
-        : controller.mode === 'paused'
-            ? '自动化已暂停'
-            : controller.mode === 'error'
-                ? 'Worker 运行异常'
-                : modeLabel === '已停止'
-                    ? '自动化已停止'
-                    : modeLabel;
     elements['status-message'].textContent = status.message || '等待操作。';
     elements['active-feature'].textContent = status.activeFeature || '—';
     elements['active-target'].textContent = status.target || '—';
@@ -469,13 +586,121 @@ function renderOverview() {
     elements['today-xp'].textContent = formatNumber(today.xp);
     elements['today-fish'].textContent = formatNumber(today.fish, 0);
 
-    const context = stats.lastContext;
-    elements['current-context'].textContent = context
+    const dashboardBaitId = dashboard?.bait?.id;
+    const fallbackCurrentBait = stats.currentBait;
+    const baitId = dashboardBaitId || fallbackCurrentBait?.baitId;
+    const baitToday = (stats.todayBaitSummaries || [])
+        .find(summary => summary.baitId === baitId) ||
+        (fallbackCurrentBait?.baitId === baitId
+            ? fallbackCurrentBait.today
+            : {}) ||
+        {};
+    const baitTotal = (stats.baitSummaries || [])
+        .find(summary => summary.baitId === baitId) ||
+        (fallbackCurrentBait?.baitId === baitId
+            ? fallbackCurrentBait.total
+            : {}) ||
+        {};
+    const baitName = dashboard?.bait?.name ||
+        baitTotal.baitName ||
+        fallbackCurrentBait?.baitName;
+    const baitPrice = dashboard?.bait?.price ??
+        baitTotal.baitPrice ??
+        fallbackCurrentBait?.baitPrice;
+    const biomeName = dashboard?.biome?.name ||
+        fallbackCurrentBait?.biomeName;
+
+    elements['current-bait-name'].textContent = baitName || '暂无鱼饵数据';
+    elements['current-bait-context'].textContent = baitId
         ? [
-            context.biomeId ? `Biome ${context.biomeId}` : null,
-            context.baitId ? `鱼饵 ${context.baitId}` : null,
+            biomeName || null,
+            baitPrice == null ? '鱼饵成本未知' : `单价 ${formatNumber(baitPrice)}`,
         ].filter(Boolean).join(' · ')
-        : '暂无收益数据';
+        : '完成一次抛竿后显示。';
+    const baitValues = {
+        'current-bait-today-casts': [baitToday.casts, 0],
+        'current-bait-today-fish': [baitToday.fish, 0],
+        'current-bait-today-gold': [baitToday.gold, 2],
+        'current-bait-today-net': [baitToday.netGold, 2],
+        'current-bait-total-casts': [baitTotal.casts, 0],
+        'current-bait-total-gold': [baitTotal.gold, 2],
+        'current-bait-total-net': [baitTotal.netGold, 2],
+        'current-bait-total-xp': [baitTotal.xp, 2],
+    };
+
+    for (const [id, [number, digits]] of Object.entries(baitValues)) {
+        elements[id].textContent = formatNumber(number, digits);
+    }
+
+    const level = Number(dashboard?.level);
+    const xp = Number(dashboard?.xp);
+    const xpToNext = Number(dashboard?.xpToNext);
+    const hasProgress = Number.isFinite(xp) &&
+        Number.isFinite(xpToNext) &&
+        xpToNext > 0;
+    const progress = hasProgress
+        ? Math.min(100, Math.max(0, xp / xpToNext * 100))
+        : 0;
+
+    elements['player-level'].textContent =
+        dashboard?.level != null && Number.isFinite(level)
+        ? formatNumber(level, 0)
+        : '—';
+    elements['player-xp-percent'].textContent = hasProgress
+        ? `${Math.floor(progress)}%`
+        : '—';
+    elements['player-xp-bar'].style.width = `${progress}%`;
+    elements['player-xp-text'].textContent = hasProgress
+        ? `${formatNumber(xp)} / ${formatNumber(xpToNext)} XP`
+        : '等待 Worker 读取角色数据';
+    const levelEta = estimateLevelUp(dashboard, today);
+
+    elements['level-eta'].textContent = hasProgress && xp >= xpToNext
+        ? '预计升级：即将完成'
+        : `预计升级：${formatEstimate(levelEta)}`;
+    elements['current-biome'].textContent = dashboard?.biome
+        ? `${dashboard.biome.name} · B${dashboard.biome.id}`
+        : stats.lastContext?.biomeName || '—';
+    const weather = dashboard?.biome?.weather;
+    const weatherLabel = weather
+        ? WEATHER_LABELS[String(weather).toLowerCase()] || weather
+        : null;
+    const xpBonusValue = dashboard?.biome?.xpBonus;
+    const xpBonus = Number(xpBonusValue);
+
+    elements['current-biome-effect'].textContent = [
+        weatherLabel,
+        xpBonusValue != null && Number.isFinite(xpBonus)
+            ? `经验 ${xpBonus >= 0 ? '+' : ''}${formatNumber(xpBonus)}%`
+            : null,
+    ].filter(Boolean).join(' · ') || '—';
+
+    const lastFish = stats.lastFish;
+    elements['last-fish-empty'].hidden = Boolean(lastFish);
+    elements['last-fish-content'].hidden = !lastFish;
+
+    if (lastFish) {
+        const display = rarityDisplay(lastFish.rarity);
+
+        elements['last-fish-rarity'].textContent = display.label;
+        elements['last-fish-rarity'].className =
+            `rarity-chip ${display.tone}`;
+        elements['last-fish-rarity'].title = String(lastFish.rarity || '');
+        elements['last-fish-name'].textContent = lastFish.name;
+        elements['last-fish-meta'].textContent =
+            `${formatNumber(lastFish.count, 0)} 条 · ${display.label}`;
+        elements['last-fish-reward'].textContent =
+            `${formatNumber(lastFish.gold)} 金币 · ${formatNumber(lastFish.xp)} XP`;
+        elements['last-fish-context'].textContent = [
+            lastFish.context?.biomeName,
+            lastFish.context?.baitName,
+        ].filter(Boolean).join(' · ') || '—';
+        elements['last-fish-time'].textContent = formatDate(lastFish.caughtAt);
+    } else {
+        elements['last-fish-rarity'].textContent = '暂无';
+        elements['last-fish-rarity'].className = 'rarity-chip unknown';
+        elements['last-fish-rarity'].title = '';
+    }
 
     const issue = controller.lastError ||
         (status.level === 'error' ? status.message : null) ||
@@ -524,6 +749,8 @@ function renderStats() {
     elements['stats-total-fish'].textContent = formatNumber(total.fish, 0);
     elements['stats-total-gold'].textContent = formatNumber(total.gold);
     elements['stats-total-xp'].textContent = formatNumber(total.xp);
+    elements['stats-total-bait-cost'].textContent = formatNumber(total.baitCost);
+    elements['stats-total-net-gold'].textContent = formatNumber(total.netGold);
 
     const rarityEntries = Object.entries(today.rarityCounts || {})
         .sort(([, left], [, right]) => right - left);
@@ -533,9 +760,11 @@ function renderStats() {
         const chip = document.createElement('span');
         const label = document.createElement('span');
         const amount = document.createElement('strong');
+        const display = rarityDisplay(rarity);
 
-        chip.className = 'rarity-chip';
-        label.textContent = rarity;
+        chip.className = `rarity-chip ${display.tone}`;
+        chip.title = rarity;
+        label.textContent = display.label;
         amount.textContent = formatNumber(count, 0);
         chip.append(label, amount);
         rarityFragment.append(chip);
@@ -550,36 +779,64 @@ function renderStats() {
     }
     elements['rarity-list'].replaceChildren(rarityFragment);
 
-    const dayFragment = document.createDocumentFragment();
-    for (const day of (snapshot.recentDays || []).slice(0, 7)) {
-        const row = document.createElement('tr');
-
-        for (const content of [
+    const dayRows = (snapshot.recentDays || []).map(day => [
             day.day,
             formatNumber(day.casts, 0),
             formatNumber(day.fish, 0),
             formatNumber(day.gold),
+            formatNumber(day.baitCost),
+            formatNumber(day.netGold),
             formatNumber(day.xp),
-        ]) {
-            const cell = document.createElement('td');
+        ]);
 
-            cell.textContent = content;
-            row.append(cell);
-        }
-        dayFragment.append(row);
-    }
+    replaceTableRows(elements['daily-stats-body'], dayRows, {
+        colspan: 7,
+        emptyMessage: '暂无每日收益数据',
+    });
 
-    if ((snapshot.recentDays || []).length === 0) {
-        const row = document.createElement('tr');
-        const cell = document.createElement('td');
+    const baitRows = (snapshot.baitSummaries || []).map(summary => [
+        summary.baitName || summary.baitId,
+        formatNumber(summary.casts, 0),
+        formatNumber(summary.fish, 0),
+        formatNumber(summary.gold),
+        formatNumber(summary.baitCost),
+        formatNumber(summary.netGold),
+        formatNumber(summary.xp),
+    ]);
 
-        cell.colSpan = 5;
-        cell.className = 'muted';
-        cell.textContent = '暂无收益数据';
-        row.append(cell);
-        dayFragment.append(row);
-    }
-    elements['daily-stats-body'].replaceChildren(dayFragment);
+    replaceTableRows(elements['bait-stats-body'], baitRows, {
+        colspan: 7,
+        emptyMessage: '暂无鱼饵收益数据',
+    });
+
+    const biomeRows = (snapshot.biomeSummaries || []).map(summary => [
+        summary.biomeName || `地图 ${summary.biomeId}`,
+        formatNumber(summary.casts, 0),
+        formatNumber(summary.fish, 0),
+        formatNumber(summary.gold),
+        formatNumber(summary.netGold),
+        formatNumber(summary.xp),
+    ]);
+
+    replaceTableRows(elements['biome-stats-body'], biomeRows, {
+        colspan: 6,
+        emptyMessage: '暂无地图收益数据',
+    });
+
+    const breakdownRows = (snapshot.breakdowns || []).map(summary => [
+        summary.biomeName || `地图 ${summary.biomeId}`,
+        summary.baitName || summary.baitId,
+        formatNumber(summary.casts, 0),
+        formatNumber(summary.fish, 0),
+        formatNumber(summary.gold),
+        formatNumber(summary.netGold),
+        formatNumber(summary.xp),
+    ]);
+
+    replaceTableRows(elements['breakdown-stats-body'], breakdownRows, {
+        colspan: 7,
+        emptyMessage: '暂无地图与鱼饵组合数据',
+    });
 }
 
 function normalizeLogs(logs) {

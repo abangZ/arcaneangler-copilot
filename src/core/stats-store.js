@@ -525,6 +525,10 @@ export class StatsStore {
                 this.value.breakdowns,
                 'bait',
             ),
+            todayBaitSummaries: listGroupedBreakdowns(
+                todayBreakdowns,
+                'bait',
+            ),
             biomeSummaries: listGroupedBreakdowns(
                 this.value.breakdowns,
                 'biome',

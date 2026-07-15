@@ -166,6 +166,7 @@ try {
     assert.equal(snapshot.breakdowns[0].biomeName, 'Moonlit Marsh');
     assert.equal(snapshot.breakdowns[0].baitName, 'Glow Worm');
     assert.equal(snapshot.baitSummaries[0].casts, 1);
+    assert.equal(snapshot.todayBaitSummaries[0].casts, 1);
     assert.equal(snapshot.biomeSummaries[0].fish, 2);
     assert.equal(snapshot.currentBait.today.gold, 97);
     assert.equal(snapshot.currentBait.today.netGold, 87);
