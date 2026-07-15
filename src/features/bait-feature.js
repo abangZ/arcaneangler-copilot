@@ -51,15 +51,6 @@ export class BaitFeature {
             return false;
         }
 
-        if (!baitSettings.selectedBaitId) {
-            this.scheduleNextCheck(baitSettings.checkIntervalMs);
-            await this.reportWaiting(
-                '等待选择目标鱼饵',
-                '自动鱼饵已开启，请先在面板中选择目标鱼饵。',
-            );
-            return false;
-        }
-
         if (await this.session.dismissBlockingOverlays()) {
             return true;
         }
@@ -80,6 +71,19 @@ export class BaitFeature {
 
         const biomeId = await this.session.getCurrentBiomeId();
         const catalog = await this.session.getBaitCatalog(biomeId);
+        const availableBaits = catalog
+            .map(bait => `${bait.name} (${bait.id})`)
+            .join('、');
+
+        if (!baitSettings.selectedBaitId) {
+            this.scheduleNextCheck(baitSettings.checkIntervalMs);
+            await this.reportWaiting(
+                '等待配置目标鱼饵',
+                `自动鱼饵已开启，但未配置 ARCANE_BAIT_ID。当前 Biome ${biomeId} 可选：${availableBaits || '无'}。请修改 .env 后重启服务。`,
+            );
+            return false;
+        }
+
         const targetBait = catalog.find(
             bait => bait.id === baitSettings.selectedBaitId,
         );
@@ -88,7 +92,7 @@ export class BaitFeature {
             this.scheduleNextCheck(baitSettings.checkIntervalMs);
             await this.reportWaiting(
                 '等待目标鱼饵可用',
-                `目标鱼饵 ${baitSettings.selectedBaitId} 不适用于当前 Biome ${biomeId}。`,
+                `目标鱼饵 ${baitSettings.selectedBaitId} 不适用于当前 Biome ${biomeId}。当前可选：${availableBaits || '无'}。`,
             );
             return false;
         }

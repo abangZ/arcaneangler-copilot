@@ -1253,13 +1253,13 @@ export class ArcaneAnglerPage {
             return false;
         }
 
-        await this.captureScreenshot('human-verification');
         await this.reporter.update({
             level: 'running',
             phase: 'verification',
             target: '自动完成人机验证',
             message: '检测到验证，正在使用真实鼠标操作页面控件。',
         });
+        await this.captureScreenshot('human-verification');
 
         let range = await this.getCaptchaRange();
 
@@ -1366,13 +1366,13 @@ export class ArcaneAnglerPage {
             return false;
         }
 
-        await this.captureScreenshot('human-verification');
         await this.reporter.update({
             level: 'waiting',
             phase: 'verification',
             target: '等待人工验证',
             message: '检测到人机验证，自动操作已暂停，请手动完成。',
         });
+        await this.captureScreenshot('human-verification');
 
         let lastReminderAt = Date.now();
 

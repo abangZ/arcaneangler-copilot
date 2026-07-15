@@ -204,9 +204,9 @@ export class AutomationEngine {
             await this.reporter.update({
                 level: 'paused',
                 phase: 'paused',
-                target: '等待用户开启自动化',
-                message: '自动化已在页面面板中暂停。',
-            }, { record: false });
+                target: '等待配置开启自动化',
+                message: '自动化已通过 ARCANE_AUTOMATION_ENABLED 关闭；修改 .env 后重启服务可恢复。',
+            });
             await sleep(500);
             return;
         }
@@ -216,8 +216,8 @@ export class AutomationEngine {
                 level: 'paused',
                 phase: 'paused',
                 target: '等待启用自动化功能',
-                message: '当前没有启用的自动化功能。',
-            }, { record: false });
+                message: '当前没有启用的自动化功能；修改 .env 后重启服务可恢复。',
+            });
             await sleep(500);
             return;
         }

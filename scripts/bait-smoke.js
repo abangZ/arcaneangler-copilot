@@ -291,6 +291,17 @@ try {
         2,
     );
 
+    const unconfiguredFeature = new BaitFeature({ session, reporter });
+    const unconfiguredSettings = structuredClone(settingsSnapshot);
+
+    unconfiguredSettings.features.bait.selectedBaitId = '';
+    assert.equal(
+        await unconfiguredFeature.tick(unconfiguredSettings),
+        false,
+    );
+    assert.equal(reporter.get().target, '等待配置目标鱼饵');
+    assert.match(reporter.get().message, /Tinker Dough \(bait_1_low\)/);
+
     const catalog = await session.getBaitCatalog(1);
     await session.openBaitEquipment();
     assert.deepEqual(

@@ -10,19 +10,49 @@ import { BaitFeature } from './features/bait-feature.js';
 import { FishingFeature } from './features/fishing-feature.js';
 import { VerificationFeature } from './features/verification-feature.js';
 import { ArcaneAnglerPage } from './site/arcane-angler-page.js';
-import { CopilotPanel } from './ui/copilot-panel.js';
 
 let context = null;
 let engine = null;
-let panel = null;
 let stopRequested = false;
+
+function enabledLabel(enabled) {
+    return enabled ? '开启' : '关闭';
+}
+
+function formatHour(hour) {
+    return `${String(hour).padStart(2, '0')}:00`;
+}
+
+function describeRuntime(config, settings) {
+    const snapshot = settings.get();
+    const details = [
+        `无头模式=${enabledLabel(config.headless)}`,
+        `自动化=${enabledLabel(snapshot.automationEnabled)}`,
+        `自动钓鱼=${enabledLabel(snapshot.features.fishing.enabled)}`,
+        `自动鱼饵=${enabledLabel(snapshot.features.bait.enabled)}`,
+        `自动验证=${enabledLabel(snapshot.features.verification.enabled)}`,
+        `运行=${config.activeMinMinutes}-${config.activeMaxMinutes} 分钟`,
+        `休息=${config.restMinMinutes}-${config.restMaxMinutes} 分钟`,
+        `夜间停机=${formatHour(config.quietStartHour)}-${formatHour(config.quietEndHour)}`,
+    ];
+
+    if (snapshot.features.bait.enabled) {
+        details.push(
+            `目标鱼饵=${snapshot.features.bait.selectedBaitId || '未配置'}`,
+            `补货阈值=${snapshot.features.bait.restockThreshold}`,
+            `购买数量=${snapshot.features.bait.purchaseQuantity}`,
+        );
+    }
+
+    return `配置已加载：${details.join('，')}。`;
+}
 
 function configurePage(page) {
     page.setDefaultTimeout(config.navigationTimeoutMs);
     page.setDefaultNavigationTimeout(config.navigationTimeoutMs);
     page.on('pageerror', error => {
-        console.log(
-            `[${new Date().toISOString()}] 页面脚本异常：${error.message}`,
+        console.error(
+            `[${new Date().toISOString()}] [ERROR/page] 页面脚本异常：${error.message}`,
         );
     });
 }
@@ -60,7 +90,6 @@ async function close(signal) {
 
     stopRequested = true;
     await engine?.stop(signal);
-    panel?.stop();
 
     const currentContext = context;
 
@@ -72,13 +101,18 @@ async function main() {
     await fs.mkdir(config.userDataDir, { recursive: true });
     await fs.mkdir(config.artifactsDir, { recursive: true });
 
-    const settings = await RuntimeSettings.load(config);
+    const settings = RuntimeSettings.fromConfig(config);
     const reporter = new StatusReporter();
 
-    const page = await launchBrowser();
+    await reporter.update({
+        level: 'idle',
+        phase: 'starting',
+        target: '启动 Copilot',
+        activeFeature: '挂机服务',
+        message: describeRuntime(config, settings),
+    });
 
-    panel = new CopilotPanel({ page, settings, reporter });
-    await panel.start();
+    const page = await launchBrowser();
 
     const session = new ArcaneAnglerPage({
         page,
@@ -90,9 +124,6 @@ async function main() {
 
     const browserLifecycle = {
         async suspend() {
-            panel?.stop();
-            panel = null;
-
             const currentContext = context;
 
             context = null;
@@ -101,15 +132,8 @@ async function main() {
         async resume() {
             try {
                 const resumedPage = await launchBrowser();
-                const resumedPanel = new CopilotPanel({
-                    page: resumedPage,
-                    settings,
-                    reporter,
-                });
 
                 session.replacePage(resumedPage);
-                await resumedPanel.start();
-                panel = resumedPanel;
             } catch (error) {
                 const currentContext = context;
 
@@ -157,15 +181,13 @@ main()
     .catch(error => {
         if (!stopRequested) {
             console.error(
-                `[${new Date().toISOString()}] 程序异常退出：`,
+                `[${new Date().toISOString()}] [ERROR/process] 程序异常退出：`,
                 error.stack || error.message,
             );
             process.exitCode = 1;
         }
     })
     .finally(async () => {
-        panel?.stop();
-
         const currentContext = context;
 
         context = null;

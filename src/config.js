@@ -77,10 +77,12 @@ function resolveProjectPath(value) {
 const clickDelayMinMs = readInteger(
     'ARCANE_CLICK_DELAY_MIN_MS',
     250,
+    { max: 60_000 },
 );
 const clickDelayMaxMs = readInteger(
     'ARCANE_CLICK_DELAY_MAX_MS',
     800,
+    { max: 60_000 },
 );
 
 if (clickDelayMinMs > clickDelayMaxMs) {
@@ -210,9 +212,6 @@ export const config = Object.freeze({
     ),
     userDataDir: resolveProjectPath(
         readString('ARCANE_USER_DATA_DIR', '.data/browser'),
-    ),
-    settingsFile: resolveProjectPath(
-        readString('ARCANE_SETTINGS_FILE', '.data/settings.json'),
     ),
     artifactsDir: resolveProjectPath(
         readString('ARCANE_ARTIFACTS_DIR', 'artifacts'),
