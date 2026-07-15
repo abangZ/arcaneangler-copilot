@@ -199,9 +199,9 @@ export class AutomationWorker {
                 this.engine?.isStopping() ||
                 false,
             canAutomate: () => this.engine?.isOperationAllowed() || false,
-            onCastResult: async result => {
+            onCastResult: async (result, context) => {
                 try {
-                    await this.statsStore.recordCast(result);
+                    await this.statsStore.recordCast(result, context);
                 } catch (error) {
                     await this.reporter.log({
                         level: 'error',

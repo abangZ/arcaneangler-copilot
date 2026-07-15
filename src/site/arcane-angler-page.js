@@ -89,7 +89,9 @@ export class ArcaneAnglerPage {
                 payload.result &&
                 typeof payload.result === 'object'
             ) {
-                await this.onCastResult(payload.result);
+                const context = await this.getCastStatsContext(payload.result);
+
+                await this.onCastResult(payload.result, context);
             }
         } catch (error) {
             await this.reporter.log({
@@ -99,6 +101,47 @@ export class ArcaneAnglerPage {
                 message: `无法读取 /cast 响应：${error.message}`,
             });
         }
+    }
+
+    async getCastStatsContext(result) {
+        const biomeId = String(result?.currentBiome ?? '').trim();
+        const baitId = String(result?.equippedBait ?? '').trim();
+
+        if (!biomeId || !baitId) {
+            return null;
+        }
+
+        return this.page.evaluate(({ currentBiome, equippedBait }) => {
+            const biome = window.BIOMES?.[currentBiome] || null;
+            let bait = null;
+
+            if (typeof window.getBaitById === 'function') {
+                try {
+                    bait = window.getBaitById(equippedBait);
+                } catch {
+                    // 回退到 BAITS catalog。
+                }
+            }
+
+            if (!bait && Array.isArray(window.BAITS)) {
+                bait = window.BAITS.find(candidate =>
+                    String(candidate?.id) === equippedBait,
+                ) || null;
+            }
+
+            const price = Number(bait?.price);
+
+            return {
+                biomeId: currentBiome,
+                biomeName: String(biome?.name || '').trim() ||
+                    `地图 ${currentBiome}`,
+                baitId: equippedBait,
+                baitName: String(bait?.name || '').trim() || equippedBait,
+                baitPrice: Number.isFinite(price) && price >= 0
+                    ? price
+                    : null,
+            };
+        }, { currentBiome: biomeId, equippedBait: baitId });
     }
 
     async trustedClick(locator, options) {
