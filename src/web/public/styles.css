@@ -131,6 +131,12 @@ h2 { margin-bottom: 16px; font-size: 15px; }
 .progress-track span { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent-strong), #69a7ff); transition: width 240ms ease-out; }
 .progress-meta { display: flex; justify-content: space-between; gap: 16px; color: var(--muted); font-size: 10px; }
 .map-status-list { margin-top: 28px; padding-top: 15px; border-top: 1px solid var(--border); }
+.derby-summary { margin-top: 18px; padding: 13px 14px; border: 1px solid rgba(148, 163, 184, 0.1); border-radius: 10px; background: var(--panel-soft); }
+.derby-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 7px; }
+.derby-heading .status-pill { min-height: 23px; padding: 3px 8px; font-size: 10px; }
+.derby-summary > strong { display: block; font-size: 14px; }
+.derby-detail-list { gap: 7px; margin-top: 12px; }
+.derby-detail-list dt, .derby-detail-list dd { font-size: 10px; }
 .last-fish-name { display: block; margin-top: 18px; font-size: 22px; letter-spacing: -0.025em; }
 .last-fish-summary #last-fish-meta { margin: 5px 0 18px; font-size: 11px; }
 .empty-compact { display: grid; min-height: 120px; place-items: center; color: var(--muted); font-size: 12px; }

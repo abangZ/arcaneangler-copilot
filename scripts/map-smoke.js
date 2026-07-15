@@ -85,6 +85,7 @@ try {
             const content = document.getElementById('content');
             const state = {
                 player: {
+                    id: 101,
                     level: 27,
                     xp: 450,
                     xpToNext: 900,
@@ -104,14 +105,22 @@ try {
                     active: {
                         id: 8,
                         derby_number: 41,
+                        derby_type: 'global',
                         biome_id: 3,
                         is_registered: true,
+                        start_time: '2026-07-15T20:00:00.000Z',
+                        end_time: '2026-07-16T20:00:00.000Z',
+                        participant_count: 118,
                     },
                     upcoming: [{
                         id: 7,
+                        derby_number: 42,
                         biome_id: 2,
                         derby_type: 'normal',
                         is_registered: false,
+                        start_time: '2026-07-17T20:00:00.000Z',
+                        end_time: '2026-07-18T20:00:00.000Z',
+                        participant_count: 23,
                     }],
                 },
                 events: [],
@@ -133,6 +142,14 @@ try {
                 },
                 async getCurrentDerbies() {
                     return structuredClone(state.derbies);
+                },
+                async getDerbyStandings() {
+                    return {
+                        standings: [
+                            { user_id: 88, total_points: 14_200 },
+                            { user_id: 101, total_points: 12_340 },
+                        ],
+                    };
                 },
             };
             window.mapSmoke = state;
@@ -250,7 +267,50 @@ try {
         name: 'River Grub',
         price: 12,
     });
+    assert.deepEqual(dashboard.derby, {
+        status: 'active',
+        id: '8',
+        number: 41,
+        type: 'global',
+        biome: {
+            id: '3',
+            name: 'Map 3',
+        },
+        startAt: '2026-07-15T20:00:00.000Z',
+        endAt: '2026-07-16T20:00:00.000Z',
+        participantCount: 118,
+        standing: {
+            rank: 2,
+            points: 12_340,
+        },
+    });
     assert.ok(Date.parse(dashboard.observedAt));
+
+    await page.evaluate(() => {
+        window.mapSmoke.derbies.active.is_registered = false;
+        window.mapSmoke.derbies.upcoming[0].is_registered = true;
+    });
+    const upcomingDashboard = await session.getDashboardSnapshot();
+
+    assert.deepEqual(upcomingDashboard.derby, {
+        status: 'upcoming',
+        id: '7',
+        number: 42,
+        type: 'normal',
+        biome: {
+            id: '2',
+            name: 'Map 2',
+        },
+        startAt: '2026-07-17T20:00:00.000Z',
+        endAt: '2026-07-18T20:00:00.000Z',
+        participantCount: 23,
+        standing: null,
+    });
+
+    await page.evaluate(() => {
+        window.mapSmoke.derbies.active.is_registered = true;
+        window.mapSmoke.derbies.upcoming[0].is_registered = false;
+    });
 
     const registration = await session.registerEligibleDerbiesThroughUi(1);
 

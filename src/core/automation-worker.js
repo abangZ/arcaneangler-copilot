@@ -184,6 +184,7 @@ export class AutomationWorker {
                     price: context.baitPrice,
                 }
                 : previous.bait || null,
+            derby: previous.derby || null,
             observedAt: new Date().toISOString(),
         };
 

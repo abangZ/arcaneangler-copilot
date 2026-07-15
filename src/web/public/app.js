@@ -19,7 +19,10 @@ const elementIds = [
     'current-bait-rarity-list',
     'player-level', 'player-xp-percent', 'player-xp-bar', 'player-xp-text',
     'level-eta', 'current-biome', 'current-biome-effect',
-    'last-fish-empty', 'last-fish-content', 'last-fish-rarity',
+    'derby-status', 'derby-title', 'derby-time-label', 'derby-time',
+    'derby-biome', 'derby-standing-row', 'derby-standing',
+    'derby-participants-row', 'derby-participants',
+    'last-fish-empty', 'last-fish-content',
     'last-fish-name', 'last-fish-meta', 'last-fish-reward',
     'last-fish-context', 'last-fish-time',
     'active-feature', 'active-target', 'browser-mode',
@@ -115,6 +118,11 @@ const WEATHER_LABELS = Object.freeze({
     heatwave: '热浪',
     windy: '大风',
     snow: '降雪',
+});
+const DERBY_TYPE_LABELS = Object.freeze({
+    normal: '普通赛',
+    global: '全球赛',
+    ironman: '铁人赛',
 });
 
 function base64UrlToBytes(value) {
@@ -764,6 +772,54 @@ function renderOverview() {
             : null,
     ].filter(Boolean).join(' · ') || '—';
 
+    const derby = dashboard?.derby;
+    const derbyActive = derby?.status === 'active';
+    const derbyType = DERBY_TYPE_LABELS[derby?.type] || derby?.type;
+    const derbyNumber = derby?.number || derby?.id;
+
+    elements['derby-status'].textContent = derby
+        ? derbyActive ? '进行中' : '等待开始'
+        : '暂无';
+    elements['derby-status'].className = derby
+        ? `status-pill ${derbyActive ? 'running' : 'waiting'}`
+        : 'status-pill';
+    elements['derby-title'].textContent = derby
+        ? [
+            derbyNumber ? `Derby #${derbyNumber}` : 'Derby',
+            derbyType,
+        ].filter(Boolean).join(' · ')
+        : '暂无已参与赛事';
+    elements['derby-time-label'].textContent = derbyActive
+        ? '结束时间'
+        : '开始时间';
+    elements['derby-time'].textContent = derby
+        ? formatFullDate(derbyActive ? derby.endAt : derby.startAt)
+        : '—';
+    elements['derby-biome'].textContent = derby?.biome
+        ? `${derby.biome.name} · B${derby.biome.id}`
+        : '—';
+    const rank = Number(derby?.standing?.rank);
+    const points = Number(derby?.standing?.points);
+    const hasStanding = derbyActive && Number.isSafeInteger(rank) && rank > 0;
+
+    elements['derby-standing-row'].hidden = !hasStanding;
+    elements['derby-standing'].textContent = hasStanding
+        ? [
+            `#${formatNumber(rank, 0)}`,
+            derby.standing.points != null && Number.isFinite(points)
+                ? `${formatNumber(points)} 分`
+                : null,
+        ].filter(Boolean).join(' · ')
+        : '—';
+    const participantCount = Number(derby?.participantCount);
+    const hasParticipantCount = derby?.participantCount != null &&
+        Number.isFinite(participantCount);
+
+    elements['derby-participants-row'].hidden = !hasParticipantCount;
+    elements['derby-participants'].textContent = hasParticipantCount
+        ? formatNumber(participantCount, 0)
+        : '—';
+
     const lastFish = stats.lastFish;
     elements['last-fish-empty'].hidden = Boolean(lastFish);
     elements['last-fish-content'].hidden = !lastFish;
@@ -771,10 +827,6 @@ function renderOverview() {
     if (lastFish) {
         const display = rarityDisplay(lastFish.rarity);
 
-        elements['last-fish-rarity'].textContent = display.label;
-        elements['last-fish-rarity'].className =
-            `rarity-chip ${display.tone}`;
-        elements['last-fish-rarity'].title = String(lastFish.rarity || '');
         elements['last-fish-name'].textContent = lastFish.name;
         elements['last-fish-meta'].textContent =
             `${formatNumber(lastFish.count, 0)} 条 · ${display.label}`;
@@ -785,10 +837,6 @@ function renderOverview() {
             lastFish.context?.baitName,
         ].filter(Boolean).join(' · ') || '—';
         elements['last-fish-time'].textContent = formatDate(lastFish.caughtAt);
-    } else {
-        elements['last-fish-rarity'].textContent = '暂无';
-        elements['last-fish-rarity'].className = 'rarity-chip unknown';
-        elements['last-fish-rarity'].title = '';
     }
 
     const issue = controller.lastError ||

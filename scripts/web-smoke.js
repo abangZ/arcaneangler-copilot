@@ -43,6 +43,32 @@ function createFakeWorker() {
             browserOpen: true,
             browserSuspended: false,
             scheduleMode: 'active',
+            dashboard: {
+                level: 27,
+                xp: 450,
+                xpToNext: 900,
+                biome: {
+                    id: '3',
+                    name: 'Map 3',
+                    weather: 'clear',
+                    xpBonus: 10,
+                },
+                bait: {
+                    id: 'bait-3',
+                    name: 'Lake Minnow',
+                    price: 15,
+                },
+                derby: {
+                    status: 'active',
+                    id: '8',
+                    number: 41,
+                    type: 'global',
+                    biome: { id: '3', name: 'Map 3' },
+                    endAt: '2026-07-16T20:00:00.000Z',
+                    participantCount: 118,
+                    standing: { rank: 2, points: 12_340 },
+                },
+            },
         }),
     };
 }
@@ -198,6 +224,10 @@ try {
         assert.match(pageHtml, /id="current-bait-rarity-list"/);
         assert.match(pageHtml, /id="player-level"/);
         assert.match(pageHtml, /id="last-fish-name"/);
+        assert.match(pageHtml, /id="derby-title"/);
+        assert.match(pageHtml, /id="derby-standing"/);
+        assert.doesNotMatch(pageHtml, /id="last-fish-rarity"/);
+        assert.doesNotMatch(pageHtml, />最后一条鱼</);
         assert.match(pageHtml, /id="verification-history"/);
         assert.match(pageHtml, /id="bait-stats-body"/);
         assert.match(pageHtml, /id="biome-stats-body"/);
@@ -207,6 +237,7 @@ try {
         assert.match(appSource, /const LOG_LIMIT = 200/);
         assert.match(appSource, /const RARITY_DISPLAY/);
         assert.match(appSource, /function estimateLevelUp/);
+        assert.match(appSource, /const DERBY_TYPE_LABELS/);
         assert.match(appSource, /保存并进入控制台/);
 
         result = await login(
@@ -363,6 +394,18 @@ try {
             await page.locator('#start-button').click();
             assert.equal((await startResponse).status(), 200);
             await page.locator('#stop-button').waitFor({ state: 'visible' });
+            await page.waitForFunction(() =>
+                document.getElementById('derby-title')?.textContent ===
+                    'Derby #41 · 全球赛',
+            );
+            assert.equal(
+                await page.locator('#derby-status').textContent(),
+                '进行中',
+            );
+            assert.equal(
+                await page.locator('#derby-standing').textContent(),
+                '#2 · 12,340 分',
+            );
 
             const stopResponse = page.waitForResponse(response =>
                 new URL(response.url()).pathname === '/api/actions/stop',

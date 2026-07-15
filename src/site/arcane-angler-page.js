@@ -153,17 +153,30 @@ export class ArcaneAnglerPage {
             const playerResponse = await window.ApiService.getPlayerData();
             const player = playerResponse?.player || playerResponse;
             let weatherByBiome = {};
+            let derbyResponse = {};
 
-            try {
-                const weatherResponse =
-                    await window.ApiService.getAllBiomeWeather();
+            await Promise.all([
+                (async () => {
+                    try {
+                        const weatherResponse =
+                            await window.ApiService.getAllBiomeWeather();
 
-                weatherByBiome = weatherResponse?.weather ||
-                    weatherResponse ||
-                    {};
-            } catch {
-                // 天气接口失败时仍返回玩家等级和当前装备。
-            }
+                        weatherByBiome = weatherResponse?.weather ||
+                            weatherResponse ||
+                            {};
+                    } catch {
+                        // 天气接口失败时仍返回玩家等级和当前装备。
+                    }
+                })(),
+                (async () => {
+                    try {
+                        derbyResponse =
+                            await window.ApiService.getCurrentDerbies();
+                    } catch {
+                        // 赛事接口失败时仍返回其他首页数据。
+                    }
+                })(),
+            ]);
 
             const biomeId = String(player?.currentBiome ?? '').trim();
             const baitId = String(player?.equippedBait ?? '').trim();
@@ -186,6 +199,65 @@ export class ArcaneAnglerPage {
             }
 
             const baitPrice = Number(bait?.price);
+            const activeDerby = derbyResponse?.active;
+            const upcomingDerby = (Array.isArray(derbyResponse?.upcoming)
+                ? derbyResponse.upcoming
+                : [])
+                .filter(derby => derby?.is_registered)
+                .sort((left, right) => {
+                    const leftStart = Date.parse(left?.start_time);
+                    const rightStart = Date.parse(right?.start_time);
+
+                    return (
+                        (Number.isFinite(leftStart) ? leftStart : Infinity) -
+                        (Number.isFinite(rightStart) ? rightStart : Infinity)
+                    );
+                })[0];
+            const selectedDerby = activeDerby?.is_registered
+                ? { ...activeDerby, status: 'active' }
+                : upcomingDerby
+                    ? { ...upcomingDerby, status: 'upcoming' }
+                    : null;
+            let derbyStanding = null;
+
+            if (
+                selectedDerby?.status === 'active' &&
+                player?.id != null &&
+                typeof window.ApiService.getDerbyStandings === 'function'
+            ) {
+                try {
+                    const standingsResponse =
+                        await window.ApiService.getDerbyStandings(
+                            selectedDerby.id,
+                        );
+                    const standings = Array.isArray(
+                        standingsResponse?.standings,
+                    )
+                        ? standingsResponse.standings
+                        : [];
+                    const standingIndex = standings.findIndex(entry =>
+                        Number(entry?.user_id) === Number(player.id),
+                    );
+                    const standing = standings[standingIndex];
+                    const points = Number(standing?.total_points);
+
+                    if (standingIndex >= 0) {
+                        derbyStanding = {
+                            rank: standingIndex + 1,
+                            points: Number.isFinite(points) ? points : null,
+                        };
+                    }
+                } catch {
+                    // 排名读取失败时仍展示赛事基本信息。
+                }
+            }
+            const derbyBiomeId = String(
+                selectedDerby?.biome_id ?? '',
+            ).trim();
+            const derbyBiome = window.BIOMES?.[derbyBiomeId] || null;
+            const participantCount = Number(
+                selectedDerby?.participant_count,
+            );
 
             return {
                 level: Number(player?.level),
@@ -211,6 +283,37 @@ export class ArcaneAnglerPage {
                             : null,
                     }
                     : null,
+                derby: selectedDerby
+                    ? {
+                        status: selectedDerby.status,
+                        id: String(selectedDerby.id ?? '').trim() || null,
+                        number: Number.isFinite(
+                            Number(selectedDerby.derby_number),
+                        )
+                            ? Number(selectedDerby.derby_number)
+                            : null,
+                        type: String(
+                            selectedDerby.derby_type || 'normal',
+                        ),
+                        biome: derbyBiomeId
+                            ? {
+                                id: derbyBiomeId,
+                                name: String(derbyBiome?.name || '').trim() ||
+                                    `地图 ${derbyBiomeId}`,
+                            }
+                            : null,
+                        startAt: String(
+                            selectedDerby.start_time || '',
+                        ).trim() || null,
+                        endAt: String(
+                            selectedDerby.end_time || '',
+                        ).trim() || null,
+                        participantCount: Number.isFinite(participantCount)
+                            ? participantCount
+                            : null,
+                        standing: derbyStanding,
+                    }
+                    : null,
             };
         });
         const normalizedNumber = (value, { positive = false } = {}) => {
@@ -227,6 +330,7 @@ export class ArcaneAnglerPage {
             xpToNext: normalizedNumber(snapshot.xpToNext, { positive: true }),
             biome: snapshot.biome,
             bait: snapshot.bait,
+            derby: snapshot.derby,
             observedAt: new Date().toISOString(),
         };
     }
