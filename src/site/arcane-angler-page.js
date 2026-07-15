@@ -218,11 +218,12 @@ export class ArcaneAnglerPage {
                 : upcomingDerby
                     ? { ...upcomingDerby, status: 'upcoming' }
                     : null;
+            const playerUserId = player?.userId ?? player?.id;
             let derbyStanding = null;
 
             if (
                 selectedDerby?.status === 'active' &&
-                player?.id != null &&
+                playerUserId != null &&
                 typeof window.ApiService.getDerbyStandings === 'function'
             ) {
                 try {
@@ -236,7 +237,7 @@ export class ArcaneAnglerPage {
                         ? standingsResponse.standings
                         : [];
                     const standingIndex = standings.findIndex(entry =>
-                        Number(entry?.user_id) === Number(player.id),
+                        Number(entry?.user_id) === Number(playerUserId),
                     );
                     const standing = standings[standingIndex];
                     const points = Number(standing?.total_points);

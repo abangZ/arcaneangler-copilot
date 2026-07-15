@@ -85,7 +85,7 @@ try {
             const content = document.getElementById('content');
             const state = {
                 player: {
-                    id: 101,
+                    userId: 101,
                     level: 27,
                     xp: 450,
                     xpToNext: 900,
