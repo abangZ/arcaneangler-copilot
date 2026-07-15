@@ -9,7 +9,17 @@
 </head>
 <body>
     <main class="shell">
-        <section id="login-view" class="login-layout">
+        <section id="auth-loading-view" class="login-layout" aria-live="polite">
+            <div class="auth-loading-card">
+                <span class="brand-mark">AA</span>
+                <div>
+                    <strong>正在恢复登录状态</strong>
+                    <p class="muted">正在连接控制台，请稍候。</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="login-view" class="login-layout" hidden>
             <div class="login-card panel">
                 <div class="brand-row">
                     <span class="brand-mark">AA</span>

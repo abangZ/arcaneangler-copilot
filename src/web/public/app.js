@@ -1,7 +1,8 @@
 const LOG_LIMIT = 200;
 
 const elementIds = [
-    'login-view', 'login-form', 'login-username', 'login-password',
+    'auth-loading-view', 'login-view', 'login-form', 'login-username',
+    'login-password',
     'login-button', 'login-error', 'app-view', 'main-nav', 'session-user',
     'stream-state', 'transport-warning', 'settings-button', 'logout-button',
     'overview-view', 'stats-view', 'logs-view', 'settings-view',
@@ -190,12 +191,14 @@ function showLogin() {
     state.eventSource = null;
     state.session = null;
     state.currentView = null;
+    elements['auth-loading-view'].hidden = true;
     elements['app-view'].hidden = true;
     elements['login-view'].hidden = false;
     elements['login-password'].value = '';
 }
 
 function showApp() {
+    elements['auth-loading-view'].hidden = true;
     elements['login-view'].hidden = true;
     elements['app-view'].hidden = false;
     elements['session-user'].textContent = state.session.username;

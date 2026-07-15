@@ -60,6 +60,51 @@ async function requestJson(origin, pathname, options = {}) {
     return { response, body };
 }
 
+async function login(origin, username, password) {
+    const challengeResult = await requestJson(
+        origin,
+        '/api/auth/challenge',
+        {
+            method: 'POST',
+            headers: {
+                ...originHeaders(origin),
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ username }),
+        },
+    );
+
+    assert.equal(challengeResult.response.status, 200);
+    const challenge = challengeResult.body;
+    const key = pbkdf2Sync(
+        password,
+        Buffer.from(challenge.salt, 'base64url'),
+        challenge.iterations,
+        32,
+        'sha256',
+    );
+    const proof = createHmac('sha256', key)
+        .update([
+            challenge.challengeId,
+            challenge.nonce,
+            username,
+        ].join('.'))
+        .digest('base64url');
+
+    return requestJson(origin, '/api/auth/login', {
+        method: 'POST',
+        headers: {
+            ...originHeaders(origin),
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            username,
+            challengeId: challenge.challengeId,
+            proof,
+        }),
+    });
+}
+
 try {
     const settingsFile = path.join(tempDirectory, 'settings.json');
     const settingsStore = new SettingsStore({ filePath: settingsFile });
@@ -140,6 +185,8 @@ try {
         assert.equal(pageResponse.status, 200);
         const pageHtml = await pageResponse.text();
         assert.match(pageHtml, /登录控制台/);
+        assert.match(pageHtml, /正在恢复登录状态/);
+        assert.match(pageHtml, /id="login-view" class="login-layout" hidden/);
         assert.match(pageHtml, /data-view="overview"/);
         assert.match(pageHtml, /data-view="stats"/);
         assert.match(pageHtml, /data-view="logs"/);
@@ -148,44 +195,11 @@ try {
         assert.match(appSource, /const LOG_LIMIT = 200/);
         assert.match(appSource, /保存并进入控制台/);
 
-        result = await requestJson(origin, '/api/auth/challenge', {
-            method: 'POST',
-            headers: {
-                ...originHeaders(origin),
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ username: 'angler' }),
-        });
-        assert.equal(result.response.status, 200);
-
-        const challenge = result.body;
-        const key = pbkdf2Sync(
+        result = await login(
+            origin,
+            'angler',
             'correct horse battery staple',
-            Buffer.from(challenge.salt, 'base64url'),
-            challenge.iterations,
-            32,
-            'sha256',
         );
-        const proof = createHmac('sha256', key)
-            .update([
-                challenge.challengeId,
-                challenge.nonce,
-                'angler',
-            ].join('.'))
-            .digest('base64url');
-
-        result = await requestJson(origin, '/api/auth/login', {
-            method: 'POST',
-            headers: {
-                ...originHeaders(origin),
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                username: 'angler',
-                challengeId: challenge.challengeId,
-                proof,
-            }),
-        });
         assert.equal(result.response.status, 200);
         const setCookie = result.response.headers.get('set-cookie');
         const cookie = setCookie.split(';')[0];
@@ -196,17 +210,42 @@ try {
         assert.doesNotMatch(setCookie, /; Secure/);
         assert.equal(result.body.secureTransport, false);
 
-        result = await requestJson(origin, '/api/auth/login', {
+        const secondLogin = await login(
+            origin,
+            'angler',
+            'correct horse battery staple',
+        );
+        assert.equal(secondLogin.response.status, 200);
+        const secondCookie = secondLogin.response.headers
+            .get('set-cookie')
+            .split(';')[0];
+        const secondCsrfToken = secondLogin.body.csrfToken;
+        assert.notEqual(secondCookie, cookie);
+
+        result = await requestJson(origin, '/api/session', {
+            headers: originHeaders(origin, cookie),
+        });
+        assert.equal(result.response.status, 200);
+        result = await requestJson(origin, '/api/session', {
+            headers: originHeaders(origin, secondCookie),
+        });
+        assert.equal(result.response.status, 200);
+
+        result = await requestJson(origin, '/api/auth/logout', {
             method: 'POST',
             headers: {
-                ...originHeaders(origin),
+                ...originHeaders(origin, secondCookie, secondCsrfToken),
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                username: 'angler',
-                challengeId: challenge.challengeId,
-                proof,
-            }),
+            body: '{}',
+        });
+        assert.equal(result.response.status, 200);
+        result = await requestJson(origin, '/api/session', {
+            headers: originHeaders(origin, cookie),
+        });
+        assert.equal(result.response.status, 200);
+        result = await requestJson(origin, '/api/session', {
+            headers: originHeaders(origin, secondCookie),
         });
         assert.equal(result.response.status, 401);
 

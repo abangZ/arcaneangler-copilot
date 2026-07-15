@@ -34,6 +34,11 @@ h2 { margin-bottom: 16px; font-size: 15px; }
 
 .login-layout { min-height: calc(100vh - 64px); display: grid; place-items: center; }
 .login-card { width: min(400px, 100%); padding: 28px; }
+.auth-loading-card { display: flex; align-items: center; gap: 14px; }
+.auth-loading-card strong { display: block; margin-bottom: 5px; font-size: 14px; }
+.auth-loading-card p { margin: 0; font-size: 12px; }
+.auth-loading-card .brand-mark { animation: auth-pulse 1.2s ease-in-out infinite alternate; }
+@keyframes auth-pulse { to { opacity: 0.55; transform: scale(0.96); } }
 .login-card h1 { margin-top: 28px; }
 .login-card > .muted { margin-bottom: 24px; font-size: 13px; }
 .stack { display: grid; gap: 16px; }
