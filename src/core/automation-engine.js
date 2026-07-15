@@ -7,18 +7,16 @@ import {
 
 export class AutomationEngine {
     constructor({
-        config,
         settings,
         reporter,
         session,
         browserLifecycle,
     }) {
-        this.config = config;
         this.settings = settings;
         this.reporter = reporter;
         this.session = session;
         this.browserLifecycle = browserLifecycle;
-        this.scheduler = new OperationScheduler(config);
+        this.scheduler = new OperationScheduler(settings.get().schedule);
         this.features = [];
         this.stopRequested = false;
         this.consecutiveErrors = 0;
@@ -40,6 +38,16 @@ export class AutomationEngine {
 
     isStopping() {
         return this.stopRequested;
+    }
+
+    getState() {
+        return {
+            scheduleMode: this.scheduleMode,
+            browserSuspended: this.browserSuspended,
+            pageReady: this.started,
+            stopping: this.stopRequested,
+            consecutiveErrors: this.consecutiveErrors,
+        };
     }
 
     isOperationAllowed() {
@@ -99,7 +107,7 @@ export class AutomationEngine {
             ? '等待夜间停挂机结束'
             : '挂机休息中';
         const message = isQuiet
-            ? `本地时间 ${String(this.config.quietStartHour).padStart(2, '0')}:00-${String(this.config.quietEndHour).padStart(2, '0')}:00 不执行自动操作，将于 ${this.formatLocalTime(gate.resumeAt)} 恢复。`
+            ? `本地时间 ${String(gate.quietStartHour).padStart(2, '0')}:00-${String(gate.quietEndHour).padStart(2, '0')}:00 不执行自动操作，将于 ${this.formatLocalTime(gate.resumeAt)} 恢复。`
             : `本轮休息 ${gate.durationMinutes} 分钟，将于 ${this.formatLocalTime(gate.resumeAt)} 恢复。`;
 
         await this.reporter.update({
@@ -163,6 +171,7 @@ export class AutomationEngine {
 
     async runCycle() {
         const settings = this.settings.get();
+        this.scheduler.updateConfig(settings.schedule);
         const enabledFeatures = this.features.filter(feature =>
             feature.isEnabled(settings),
         );
@@ -205,7 +214,7 @@ export class AutomationEngine {
                 level: 'paused',
                 phase: 'paused',
                 target: '等待配置开启自动化',
-                message: '自动化已通过 ARCANE_AUTOMATION_ENABLED 关闭；修改 .env 后重启服务可恢复。',
+                message: '自动化已暂停；可通过 Web 控制台恢复。',
             });
             await sleep(500);
             return;
@@ -216,7 +225,7 @@ export class AutomationEngine {
                 level: 'paused',
                 phase: 'paused',
                 target: '等待启用自动化功能',
-                message: '当前没有启用的自动化功能；修改 .env 后重启服务可恢复。',
+                message: '当前没有启用的自动化功能；可在 Web 控制台修改配置。',
             });
             await sleep(500);
             return;
@@ -249,7 +258,7 @@ export class AutomationEngine {
             }
         }
 
-        await sleep(this.config.pollIntervalMs);
+        await sleep(settings.advanced.pollIntervalMs);
     }
 
     async start() {
@@ -268,16 +277,17 @@ export class AutomationEngine {
                 }
 
                 this.consecutiveErrors += 1;
+                const settings = this.settings.get();
                 await this.reporter.update({
                     level: 'error',
                     phase: 'recovery',
                     target: '恢复自动化',
-                    message: `自动化异常（${this.consecutiveErrors}/${this.config.recoveryErrorCount}）：${error.message}`,
+                    message: `自动化异常（${this.consecutiveErrors}/${settings.advanced.recoveryErrorCount}）：${error.message}`,
                 });
 
                 if (
                     this.consecutiveErrors >=
-                    this.config.recoveryErrorCount
+                    settings.advanced.recoveryErrorCount
                 ) {
                     try {
                         await this.recover();

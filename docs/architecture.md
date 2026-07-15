@@ -2,166 +2,183 @@
 
 ## 目标
 
-Arcane Angler Copilot 将浏览器会话、站点页面操作、自动化功能和状态报告分离。新增功能时不应直接扩展 `src/index.js`，也不应让一个功能读取另一个功能的 DOM Locator。
-
-当前的数据流是：
+Arcane Angler Copilot 由常驻 Web 控制面和按需创建的 Playwright Worker 组成。HTTP 请求不能直接操作游戏页面；所有启动、暂停、恢复、停止和配置重建命令都由 `WorkerController` 串行处理。
 
 ```text
-.env ──> config ──> RuntimeSettings（只读）──> AutomationEngine
-                                           ├── OperationScheduler
-                                           ├── VerificationFeature
-                                           ├── MapFeature
-                                           ├── BaitFeature
-                                           └── FishingFeature
-
-AutomationEngine / features ──> ArcaneAnglerPage ──> Playwright Page
-              ├──> browserProfile / browserLifecycle ──> Playwright Context
-              └──> StatusReporter ──> stdout / stderr ──> systemd journal
+.env（账户 / Web 基础设施）
+          │
+          ├──> AuthService ──> session / CSRF
+          │
+Browser ──> ControlServer ──> WorkerController ──> AutomationWorker
+   ▲              │                  │                    │
+   │              ├──> SettingsStore ┘                    ├──> AutomationEngine
+   │              │                                       │      ├── Scheduler
+   │              └──> SSE <── StatusReporter <────────────┤      └── Features
+   │                         └── LogStore                   │
+   └───────────────────────────────────────────────────────┴──> ArcaneAnglerPage
 ```
 
-## 模块职责
+服务启动时只创建 `ControlServer`。用户登录、保存 `.data/settings.json` 并点击“启动”后，`WorkerController` 才创建 `AutomationWorker` 和 Playwright persistent context。
 
-### `src/core/automation-engine.js`
+## 配置边界
 
-- 注册并按 `priority` 从小到大调度功能。
-- 处理总开关、连续异常、截图和页面恢复。
-- 不包含钓鱼、商店或背包的 DOM 细节。
-- 在任何页面初始化或 feature 调度前执行挂机时间门禁。
-- 进入夜间状态时关闭 Playwright 持久化上下文，退出夜间状态时重建页面和页面适配器引用。
-- 浏览器页面不可恢复地关闭时让进程失败退出，交给 systemd 重启。
+### `src/config.js`
 
-### `src/core/operation-scheduler.js`
+- 从 `.env` 读取 Arcane Angler 用户名和密码。
+- 读取 Web host/port、目标 URL、浏览器目录和截图目录等进程级基础设施配置。
+- 不读取地图、鱼饵、功能开关和调度参数。
+- 账户密码只传给 `AuthService` 和 `ArcaneAnglerPage`，不进入网页配置、API 响应或日志。
 
-- 默认随机运行 40–70 分钟，再随机休息 5–15 分钟。
-- 按 Node.js 进程本地时间在 00:00–08:00 禁止自动操作；开始、结束小时可通过环境变量调整。
-- 配置关闭自动化或没有启用 feature 时重置当前运行周期，重启并恢复配置后开始新的随机周期。
-- 对页面点击暴露实时许可状态，避免一个较长 feature 跨过休息或夜间边界后继续点击。
-- 状态机包含 `idle`、`active`、`rest`、`quiet` 和 `disabled`；夜间状态优先于其他状态。
+### `src/core/settings-schema.js`
 
-每轮调度会调用已启用功能的 `tick(settings)`。返回 `true` 表示本轮已处理，后续低优先级功能不再执行；返回 `false` 时引擎继续尝试下一个功能。
+- 定义所有可由 Web 修改的默认配置和唯一服务端校验入口。
+- 拒绝未知字段、非法范围和跨字段冲突。
+- 鱼饵购买数量必须是 100 的倍数；固定地图必须提供目标 Biome。
+- 角色、无头模式和页面操作超时属于需要重建 Worker 的设置。
 
-### `src/core/browser-profile.js`
+### `src/core/settings-store.js`
 
-- 使用 Playwright 内置完整 Chromium 的新无头模式，不使用默认 Headless Shell。
-- 从实际 Chromium 可执行文件读取版本，生成同平台、同主版本的桌面 Chrome User-Agent。
-- 统一设置 context UA，保证网络请求头和 `navigator.userAgent` 一致。
-- 关闭 Blink 的 `AutomationControlled` 标记，减少默认 `navigator.webdriver` 暴露。
-- 这里只处理稳定的基础浏览器身份，不做随机 canvas、WebGL、音频或字体伪装。
-
-### `src/site/arcane-angler-page.js`
-
-- 封装登录、角色选择、侧栏导航、每日奖励、鱼饵页面操作、经典模式切换和抛竿控件查找。
-- 统一处理当前站点 DOM 与 API 响应细节。
-- 新功能需要页面能力时，应优先在这里增加语义方法，例如 `openShop()`、`getBaitStock()`、`buyBait()`，而不是把 Locator 写入 feature。
-
-Locator 的优先级：
-
-1. 表单类型、直接父子关系和稳定控件结构。
-2. 状态 class、`disabled`、`localStorage` 和请求路径。
-3. 图标或不参与翻译的属性。
-4. 英文文本只作为兼容兜底。
-
-普通页面操作通过 Playwright `Locator.click()` 进入浏览器输入通道，事件为 `isTrusted=true`；禁止在页面上下文调用 `HTMLElement.click()`。只有 Human Verification 需要额外的拟人鼠标轨迹和滑块拖动。
-
-指定 `ARCANE_CHARACTER` 时必须按角色展示名匹配，这是有意保留的文本依赖；角色名属于用户数据，不是界面翻译文案。
-
-### `src/features/fishing-feature.js`
-
-- 维护自动钓鱼自己的初始化状态与停滞时间。
-- 确保经典模式、等待可用按钮并执行点击。
-- 不负责登录、全局恢复和日志格式化。
-
-### `src/features/map-feature.js`
-
-- 优先级为 `25`，位于人机验证之后、自动鱼饵和自动钓鱼之前。
-- `fixed` 模式确保角色位于配置的已解锁 Biome；`auto` 模式每小时检查 Derby 和天气后重新选择。
-- 自动模式先报名所有当前可参与的 upcoming Derby；如果有已报名的 active Derby，优先进入其地图。
-- 没有已参与的 active Derby 时，按 `天气经验加成 + (Biome 编号 - 1) × 10%` 排序，同分选择编号更高的地图。
-- 不负责 DOM Locator，也不自动解锁地图；位于 Party Boat 时不改变共享地图。
-
-### `src/features/bait-feature.js`
-
-- 优先级为 `50`，位于人机验证之后、自动钓鱼之前。
-- 按配置的 `0..4` 档位解析当前 biome 对应的目标鱼饵，定期检查库存，必要时购买一次并装备。
-- 配置变化和页面恢复后允许立即检查；未到检查时间时返回 `false`，不阻塞自动钓鱼。
-- 只编排语义操作，不持有 Playwright Locator；所有页面结构和响应确认都留在页面适配层。
-- 金币不足或按钮不可用时等待下次检查，不触发页面恢复循环。
+- 配置保存在 `.data/settings.json`，不包含账户密码。
+- 首次启动时 `configured=false`，默认值只用于填充表单，不能直接启动 Worker。
+- 保存使用 revision 做乐观并发控制，并通过临时文件 + rename 原子替换。
+- 文件权限固定为 `0600`。配置损坏时保留 Web 服务，回退安全默认值并在页面显示错误。
 
 ### `src/core/runtime-settings.js`
 
-- 将已经由 `config` 校验过的 `.env` 参数映射为按 feature 分组的只读快照。
-- 不持久化设置，也不在运行中动态修改；变更配置需要重启服务。
-- 不包含账号密码等站点认证数据。
+- 把 `SettingsStore` 的最新快照提供给 Engine 和 features。
+- 每次 `get()` 都返回克隆，feature 不能直接修改配置。
+- 地图、鱼饵、调度和延迟变化在后续 tick 生效，不需要重启服务。
 
-设置结构按 feature 分组：
+## Web 控制面
 
-```json
-{
-  "automationEnabled": true,
-  "features": {
-    "fishing": {
-      "enabled": true,
-      "enforceClassicMode": true,
-      "clickDelayMinMs": 250,
-      "clickDelayMaxMs": 800
-    },
-    "map": {
-      "mode": "off",
-      "targetBiomeId": null,
-      "checkIntervalMs": 3600000
-    },
-    "verification": {
-      "enabled": true
-    },
-    "bait": {
-      "enabled": false,
-      "selectedBaitTier": 0,
-      "restockThreshold": 100,
-      "purchaseQuantity": 1000,
-      "checkIntervalMs": 30000
-    }
-  }
-}
+### `src/web/auth-service.js`
+
+Web 登录复用 `.env` 中的 Arcane Angler 账户，但与游戏网页登录路径隔离：
+
+1. 浏览器请求一次性 `challengeId + salt + nonce`。
+2. 浏览器用 Web Crypto PBKDF2 派生 key，再提交 HMAC proof。
+3. 服务端用 `.env` 密码计算期望 proof，并用恒定时间比较。
+4. challenge 绑定来源 IP、有效期 60 秒且只能使用一次。
+5. 连续失败达到阈值后按 IP 限流 15 分钟。
+6. 成功后生成 12 小时随机 session；服务端只保存 session token 的 SHA-256 key。
+
+静态 salted hash 会成为可重放凭据，因此禁止使用。challenge-response 也不能代替 HTTPS；远程部署必须通过反向代理或安全隧道提供 TLS。
+
+### `src/web/control-server.js`
+
+- 使用 Node.js HTTP 服务静态页面和 JSON API，不引入游戏页面 DOM。
+- session cookie 使用 `HttpOnly`、`SameSite=Strict`；HTTPS 下增加 `Secure`。
+- 修改接口同时校验 session、CSRF token 和 Origin。
+- 设置 CSP、frame、MIME、referrer 和 permissions 安全响应头。
+- API body 限制为 64 KiB，不提供任意路径文件读取。
+- SSE 使用同源 session cookie，响应禁用代理缓冲。
+
+主要接口：
+
+```text
+POST /api/auth/challenge
+POST /api/auth/login
+GET  /api/session
+POST /api/auth/logout
+GET  /api/state
+GET  /api/settings
+PUT  /api/settings
+GET  /api/logs
+GET  /api/events
+POST /api/actions/start|pause|resume|stop|restart
 ```
 
-`.env` 是唯一配置来源，旧版 `.data/settings.json` 不再读取。
+SSE 事件分为 `status`、`controller`、`settings`、`log` 和会话过期时的 `auth`。日志事件带递增 ID；首次连接从已加载日志的最新 ID 继续，后续通过 `Last-Event-ID` 断线补发；每 15 秒发送 heartbeat。
 
-## 自动地图执行流
+## Worker 生命周期
 
-1. 每次检查通过页面已有的只读 `ApiService` 获取当前角色的已解锁 Biome、天气和 Derby 状态。
-2. 自动模式发现可报名的 upcoming Derby 时，进入 Events 页面并点击一键报名按钮；不直接构造报名请求。
-3. 当前有已经报名的 active Derby 时选择其 `biome_id`；否则计算每个已解锁 Biome 的天气经验和等级加权分数。
-4. 固定模式直接使用 `ARCANE_TARGET_BIOME_ID`，但目标未解锁时只报告等待，不点击解锁确认。
-5. 进入 Biomes 页面，必要时切换分页，再通过 Playwright `Locator.click()` 点击已解锁地图卡片并等待返回 Fishing。
-6. 默认一小时后重新检查；挂机休息和页面恢复不会把每小时检查缩短为每轮都检查。
+### `src/core/worker-controller.js`
+
+控制状态包括：
+
+```text
+stopped -> starting -> running -> pausing -> paused
+                       │   ▲                    │
+                       │   └──── resume ────────┘
+                       └── stopping -> stopped
+```
+
+启动异常进入 `error`，可以再次启动或停止。所有命令进入同一 Promise queue，避免 HTTP 请求并发创建、关闭或重启浏览器。
+
+- `start`：要求配置已经保存，然后创建 Worker。
+- `pause`：先调用 Engine stop gate，等待当前协作式操作退出，再关闭整个 persistent context。
+- `resume`：创建新 Worker；如果当前处于 quiet hours，Engine 会立即进入 quiet 并保持浏览器关闭。
+- `stop`：关闭 Worker，配置保持不变。
+- `restart`：串行执行 stop/start。
+- 会话级配置变化时自动执行受控重启；其他配置从下一轮 tick 生效。
+
+### `src/core/automation-worker.js`
+
+- 创建 browser profile、persistent context、`ArcaneAnglerPage`、Engine 和 features。
+- quiet hours 的 `browserLifecycle.suspend/resume` 只关闭和重建 Playwright，不影响 Web 服务。
+- `session.replacePage()` 保证恢复后所有 feature 使用新的页面引用。
+- 页面脚本异常通过 `StatusReporter.log()` 记录，不整体转发页面 console。
+
+### `src/core/automation-engine.js`
+
+- 注册并按优先级调度 Verification、Map、Bait、Fishing。
+- 每轮读取最新配置，并把最新 schedule 交给 `OperationScheduler`。
+- 操作前继续通过 `isOperationAllowed()` / `AutomationPausedError` 做实时门禁。
+- 连续异常达到网页配置的阈值后截图并尝试恢复。
+- 浏览器不可恢复地关闭时让 Worker 进入 error；Web 控制面继续在线。
+
+### `src/core/operation-scheduler.js`
+
+- 状态包含 `idle`、`active`、`rest`、`quiet` 和 `disabled`。
+- quiet 优先于功能开关和 active/rest。
+- schedule 变化时重置当前周期并使用新配置重新计算。
+- quiet 会关闭整个 Playwright persistent context，而不是只关闭 page。
+
+## 页面与 Feature 边界
+
+`ArcaneAnglerPage` 继续封装所有 DOM Locator 和页面响应细节。普通点击必须使用 Playwright `Locator.click()`，禁止在页面上下文调用 `HTMLElement.click()`。Human Verification 可以使用真实鼠标移动、点击和拖动。
+
+feature 只编排语义操作：
+
+- `VerificationFeature`：优先处理页面验证。
+- `MapFeature`：报名可参与 Derby，并按赛事或经验权重切换已解锁地图。
+- `BaitFeature`：按当前地图的 `0..4` 档位购买和装备鱼饵。
+- `FishingFeature`：确保经典模式并点击可用抛竿按钮。
+
+HTTP API 和 Web UI 不得直接持有 DOM Locator，也不得绕过 Engine queue 调用页面方法。
+
+## 状态和日志
 
 ### `src/core/status-reporter.js`
 
-- 汇总 level、phase、当前 feature、目标、事件和累计抛竿次数。
-- 将普通状态写入 stdout，将错误状态写入 stderr，方便 systemd journal 收集。
-- `record: false` 仅用于不需要落日志的高频瞬时状态；关键状态更新必须保留默认输出。
-- 对完全相同的连续状态去重，避免配置关闭时的轮询刷屏。
+- 维护当前结构化状态，并继续输出 stdout/stderr。
+- `record:false` 的高频状态只更新当前快照，不写日志文件。
+- 当前状态变化和日志记录分别向 SSE 订阅者发送事件。
+- 页面 console 不作为状态事实来源。
 
-新增 feature 时应增加清晰的 `activeFeature`、`target` 和 `message`，不要把页面 console 整体转发到服务端。
+### `src/core/log-store.js`
 
-## 自动鱼饵执行流
+- 内存保留最近 2,000 条结构化日志。
+- 按 UTC 日期追加 `.data/logs/YYYY-MM-DD.jsonl`。
+- 启动时加载最近 7 个日志文件，并从历史最大 ID 继续递增。
+- 单条损坏日志不会阻止 Web 控制面启动。
 
-1. 在 Fishing 页面读取 `[B数字]` 标记，并通过页面已有的 `getBaitsForBiome()` 获取当前地图的鱼饵目录。
-2. 使用 `ARCANE_BAIT_TIER` 配置的 `0..4` 档位读取目录中相同索引的鱼饵，再用其内部 ID 定位页面卡片。
-3. 按侧栏结构索引进入 Equipment，再点击第二个标签打开 Baits。
-4. 用目录索引定位卡片，通过右上库存数字和 `border-yellow-400` class 读取状态。
-5. 库存低于阈值时填写自定义数量，依次点击购买和二次确认按钮，并等待库存增加。
-6. 有库存但未装备时点击页面装备按钮，等待卡片装备状态更新。
-7. 返回 Fishing 页面，等待下一次检查；购买数量固定校验为 100 的倍数。
+## 关闭流程
 
-目标鱼饵档位通过 `ARCANE_BAIT_TIER` 配置，范围为 `0..4`。页面仍通过 `window.BIOMES` 和 `getBaitsForBiome()` 获取当前 biome 的鱼饵目录，因此切图后会自动把同一档位解析为该地图自己的鱼饵 ID；档位不可用时，控制台会列出当前 biome 的可选档位和名称。默认不开启自动鱼饵，避免首次启动就消费金币。
+SIGINT / SIGTERM 的顺序是：
 
-## 恢复与安全边界
+1. 标记服务停止并记录状态。
+2. 关闭所有 SSE 响应和 HTTP server，停止接收新的控制命令。
+3. 通过 `WorkerController.stop()` 阻止新页面操作、等待 Engine 退出并关闭浏览器。
 
-- 连续异常由引擎统一计数，达到阈值后截图并重载页面。
-- Human Verification 由独立高优先级 feature 处理，只操作页面已经渲染的入口、滑块和提交按钮；失败后回退人工处理。
-- 页面控制台不会被整体转发，因为站点日志可能包含登录响应或令牌。
-- 自动化只通过页面 UI 操作，不构造 `/api/game/cast` 请求。
-- 每日奖励、鱼饵购买和装备同样只操作页面控件；响应监听只用于确认页面操作结果。
-- Derby 报名和地图切换同样只点击页面现有控件；只读 API 仅用于获取选择所需状态。
-- `.env`、浏览器状态和截图都必须保持在 Git 忽略范围内。
+## 验证
+
+- `pnpm run smoke:web`：challenge 登录、session/CSRF、配置持久化、SSE 和 Worker 控制。
+- `pnpm run smoke:reporter`：运行配置快照、结构化输出和重复抑制。
+- `pnpm run smoke:scheduler`：active/rest/quiet 和浏览器 suspend/resume。
+- `pnpm run smoke:map`：Derby 报名、地图算法和可信点击。
+- `pnpm run smoke:bait`：跨地图档位、购买、装备和库存处理。
+- `pnpm run smoke:verification`：真实鼠标验证事件。
+- Chromium smoke 在当前环境中串行执行，不并行启动 persistent browser。
+
+`.env`、`.data/`、`artifacts/` 和 `node_modules/` 必须保持在 Git 忽略范围内。

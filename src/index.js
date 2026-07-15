@@ -1,105 +1,21 @@
-import fs from 'node:fs/promises';
-
-import { chromium } from 'playwright';
-
 import { config } from './config.js';
-import { AutomationEngine } from './core/automation-engine.js';
-import { createBrowserProfile } from './core/browser-profile.js';
-import { RuntimeSettings } from './core/runtime-settings.js';
+import { AutomationWorker } from './core/automation-worker.js';
+import { LogStore } from './core/log-store.js';
+import { SettingsStore } from './core/settings-store.js';
 import { StatusReporter } from './core/status-reporter.js';
-import { BaitFeature } from './features/bait-feature.js';
-import { FishingFeature } from './features/fishing-feature.js';
-import { MapFeature } from './features/map-feature.js';
-import { VerificationFeature } from './features/verification-feature.js';
-import { ArcaneAnglerPage } from './site/arcane-angler-page.js';
+import { WorkerController } from './core/worker-controller.js';
+import { AuthService } from './web/auth-service.js';
+import { ControlServer } from './web/control-server.js';
 
-let context = null;
-let engine = null;
-let browserProfile = null;
+let server = null;
+let controller = null;
+let reporter = null;
 let stopRequested = false;
 
-function enabledLabel(enabled) {
-    return enabled ? '开启' : '关闭';
-}
+function formatListenAddress({ host, port }) {
+    const displayHost = host.includes(':') ? `[${host}]` : host;
 
-function formatHour(hour) {
-    return `${String(hour).padStart(2, '0')}:00`;
-}
-
-function describeMapSettings(mapSettings) {
-    if (mapSettings.mode === 'auto') {
-        return '自动';
-    }
-
-    if (mapSettings.mode === 'fixed') {
-        return `固定 Biome ${mapSettings.targetBiomeId}`;
-    }
-
-    return '关闭';
-}
-
-function describeRuntime(config, settings, profile) {
-    const snapshot = settings.get();
-    const details = [
-        `无头模式=${enabledLabel(config.headless)}`,
-        `自动化=${enabledLabel(snapshot.automationEnabled)}`,
-        `自动钓鱼=${enabledLabel(snapshot.features.fishing.enabled)}`,
-        `地图模式=${describeMapSettings(snapshot.features.map)}`,
-        `自动鱼饵=${enabledLabel(snapshot.features.bait.enabled)}`,
-        `自动验证=${enabledLabel(snapshot.features.verification.enabled)}`,
-        `Chromium=${profile.browserVersion}`,
-        `运行=${config.activeMinMinutes}-${config.activeMaxMinutes} 分钟`,
-        `休息=${config.restMinMinutes}-${config.restMaxMinutes} 分钟`,
-        `夜间停机=${formatHour(config.quietStartHour)}-${formatHour(config.quietEndHour)}`,
-    ];
-
-    if (snapshot.features.bait.enabled) {
-        details.push(
-            `目标鱼饵档位=${snapshot.features.bait.selectedBaitTier}`,
-            `补货阈值=${snapshot.features.bait.restockThreshold}`,
-            `购买数量=${snapshot.features.bait.purchaseQuantity}`,
-        );
-    }
-
-    return `配置已加载：${details.join('，')}。`;
-}
-
-function configurePage(page) {
-    page.setDefaultTimeout(config.navigationTimeoutMs);
-    page.setDefaultNavigationTimeout(config.navigationTimeoutMs);
-    page.on('pageerror', error => {
-        console.error(
-            `[${new Date().toISOString()}] [ERROR/page] 页面脚本异常：${error.message}`,
-        );
-    });
-}
-
-async function launchBrowser() {
-    const nextContext = await chromium.launchPersistentContext(
-        config.userDataDir,
-        {
-            headless: config.headless,
-            channel: browserProfile.channel,
-            userAgent: browserProfile.userAgent,
-            viewport: {
-                width: 1280,
-                height: 900,
-            },
-            locale: 'en-US',
-            args: browserProfile.args,
-        },
-    );
-
-    if (stopRequested) {
-        await nextContext.close().catch(() => {});
-        throw new Error('程序停止期间取消创建浏览器。');
-    }
-
-    context = nextContext;
-    const page = context.pages()[0] || await context.newPage();
-
-    configurePage(page);
-    return page;
+    return `http://${displayHost}:${port}`;
 }
 
 async function close(signal) {
@@ -108,91 +24,72 @@ async function close(signal) {
     }
 
     stopRequested = true;
-    await engine?.stop(signal);
+    await reporter?.update({
+        level: 'idle',
+        phase: 'stopping',
+        target: '关闭 Copilot 服务',
+        message: `收到 ${signal}，正在停止 Worker 和 Web 服务。`,
+    });
+    const serverClosePromise = server?.close().catch(() => {});
 
-    const currentContext = context;
-
-    context = null;
-    await currentContext?.close().catch(() => {});
+    await controller?.stop().catch(() => {});
+    await serverClosePromise;
 }
 
 async function main() {
-    await fs.mkdir(config.userDataDir, { recursive: true });
-    await fs.mkdir(config.artifactsDir, { recursive: true });
+    const logStore = new LogStore({ directory: config.logsDir });
+    const settingsStore = new SettingsStore({
+        filePath: config.settingsFile,
+    });
 
-    const settings = RuntimeSettings.fromConfig(config);
-    const reporter = new StatusReporter();
+    await Promise.all([
+        logStore.initialize(),
+        settingsStore.initialize(),
+    ]);
 
-    browserProfile = createBrowserProfile();
+    reporter = new StatusReporter({ logStore });
+    controller = new WorkerController({
+        settingsStore,
+        reporter,
+        createWorker: () => new AutomationWorker({
+            staticConfig: config,
+            settingsStore,
+            reporter,
+        }),
+    });
+
+    const authService = new AuthService({
+        username: config.username,
+        password: config.password,
+    });
+
+    server = new ControlServer({
+        host: config.webHost,
+        port: config.webPort,
+        authService,
+        settingsStore,
+        controller,
+        reporter,
+    });
+
+    const address = await server.start();
 
     await reporter.update({
         level: 'idle',
-        phase: 'starting',
-        target: '启动 Copilot',
-        activeFeature: '挂机服务',
-        message: describeRuntime(config, settings, browserProfile),
+        phase: 'web',
+        target: '等待网页登录和手动启动',
+        activeFeature: 'Web 控制面',
+        message: `Web 控制面已启动：${formatListenAddress(address)}。Playwright Worker 尚未启动。`,
     });
 
-    const page = await launchBrowser();
-
-    const session = new ArcaneAnglerPage({
-        page,
-        config,
-        reporter,
-        shouldStop: () => stopRequested || engine?.isStopping() || false,
-        canAutomate: () => engine?.isOperationAllowed() || false,
-    });
-
-    const browserLifecycle = {
-        async suspend() {
-            const currentContext = context;
-
-            context = null;
-            await currentContext?.close().catch(() => {});
-        },
-        async resume() {
-            try {
-                const resumedPage = await launchBrowser();
-
-                session.replacePage(resumedPage);
-            } catch (error) {
-                const currentContext = context;
-
-                context = null;
-                await currentContext?.close().catch(() => {});
-                throw error;
-            }
-        },
-    };
-
-    engine = new AutomationEngine({
-        config,
-        settings,
-        reporter,
-        session,
-        browserLifecycle,
-    });
-
-    engine.register(new VerificationFeature({
-        session,
-        reporter,
-    }));
-    engine.register(new MapFeature({
-        session,
-        reporter,
-    }));
-    engine.register(new BaitFeature({
-        session,
-        reporter,
-    }));
-    engine.register(new FishingFeature({
-        session,
-        settings,
-        reporter,
-        config,
-    }));
-
-    await engine.start();
+    if (settingsStore.get().loadError) {
+        await reporter.log({
+            level: 'error',
+            phase: 'web',
+            target: '读取网页配置',
+            message: `历史配置读取失败，已回退安全默认值：${settingsStore.get().loadError}`,
+        });
+    }
 }
 
 process.once('SIGINT', () => {
@@ -202,19 +99,12 @@ process.once('SIGTERM', () => {
     void close('SIGTERM');
 });
 
-main()
-    .catch(error => {
-        if (!stopRequested) {
-            console.error(
-                `[${new Date().toISOString()}] [ERROR/process] 程序异常退出：`,
-                error.stack || error.message,
-            );
-            process.exitCode = 1;
-        }
-    })
-    .finally(async () => {
-        const currentContext = context;
-
-        context = null;
-        await currentContext?.close().catch(() => {});
-    });
+main().catch(error => {
+    if (!stopRequested) {
+        console.error(
+            `[${new Date().toISOString()}] [ERROR/process] 程序异常退出：`,
+            error.stack || error.message,
+        );
+        process.exitCode = 1;
+    }
+});

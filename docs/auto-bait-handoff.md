@@ -1,5 +1,7 @@
 # 登录奖励与自动鱼饵功能交接
 
+> 2026-07-15：本文件保留自动鱼饵阶段的页面结构和验证证据。原有 `.env` / 控制台配置边界已经由 Web 控制面取代；当前配置、生命周期和部署方式以 `README.md` 与 `docs/architecture.md` 为准。
+
 ## 新会话从这里开始
 
 当前项目已经从 `tampermonkey-scripts/arcaneangler-copilot` 移动到：

@@ -102,6 +102,21 @@ assert.equal(gate.allowed, false);
 assert.equal(gate.mode, OPERATION_STATES.QUIET);
 assert.equal(quietScheduler.canOperateNow(), false);
 
+const updatedSchedule = {
+    ...config,
+    quietStartHour: 9,
+    quietEndHour: 10,
+};
+assert.equal(quietScheduler.updateConfig(updatedSchedule), true);
+assert.equal(quietScheduler.mode, OPERATION_STATES.IDLE);
+quietNow = new Date(2026, 6, 16, 9, 0, 0, 0);
+gate = quietScheduler.evaluate();
+assert.equal(gate.mode, OPERATION_STATES.QUIET);
+assert.equal(gate.quietStartHour, 9);
+assert.equal(gate.quietEndHour, 10);
+
+quietScheduler.updateConfig(config);
+
 let lifecycleNow = new Date(2026, 6, 16, 1, 0, 0, 0);
 const lifecycleEvents = [];
 const lifecycleScheduler = new OperationScheduler(config, {
@@ -117,6 +132,8 @@ const engine = new AutomationEngine({
     settings: {
         get: () => ({
             automationEnabled: true,
+            schedule: config,
+            advanced: { pollIntervalMs: 1, recoveryErrorCount: 3 },
             features: { fishing: { enabled: true } },
         }),
     },

@@ -1,49 +1,22 @@
 import assert from 'node:assert/strict';
 
 import { RuntimeSettings } from '../src/core/runtime-settings.js';
+import { DEFAULT_SETTINGS } from '../src/core/settings-schema.js';
 import { StatusReporter } from '../src/core/status-reporter.js';
 
-const settings = RuntimeSettings.fromConfig({
-    automationEnabled: true,
-    autoFishing: true,
-    mapMode: 'auto',
-    targetBiomeId: null,
-    mapCheckIntervalMs: 3_600_000,
-    autoVerify: true,
-    autoBait: true,
-    baitTier: 0,
-    baitRestockThreshold: 100,
-    baitPurchaseQuantity: 1_000,
-    baitCheckIntervalMs: 30_000,
-    enforceClassicMode: true,
-    clickDelayMinMs: 250,
-    clickDelayMaxMs: 800,
+const runtimeValue = structuredClone(DEFAULT_SETTINGS);
+runtimeValue.features.map.mode = 'auto';
+runtimeValue.features.bait.enabled = true;
+
+const settings = new RuntimeSettings({
+    getRuntimeSettings: () => structuredClone(runtimeValue),
 });
 
-assert.deepEqual(settings.get(), {
-    automationEnabled: true,
-    features: {
-        fishing: {
-            enabled: true,
-            enforceClassicMode: true,
-            clickDelayMinMs: 250,
-            clickDelayMaxMs: 800,
-        },
-        map: {
-            mode: 'auto',
-            targetBiomeId: null,
-            checkIntervalMs: 3_600_000,
-        },
-        verification: { enabled: true },
-        bait: {
-            enabled: true,
-            selectedBaitTier: 0,
-            restockThreshold: 100,
-            purchaseQuantity: 1_000,
-            checkIntervalMs: 30_000,
-        },
-    },
-});
+assert.equal(settings.get().automationEnabled, true);
+assert.equal(settings.get().features.map.mode, 'auto');
+assert.equal(settings.get().features.bait.enabled, true);
+assert.equal(settings.get().features.bait.selectedBaitTier, 0);
+assert.deepEqual(settings.get().schedule, DEFAULT_SETTINGS.schedule);
 
 const output = {
     log: [],
@@ -89,5 +62,5 @@ assert.deepEqual(output.error, [
 ]);
 
 console.log(
-    'Reporter smoke passed: environment settings, structured output and duplicate suppression work.',
+    'Reporter smoke passed: web settings snapshots, structured output and duplicate suppression work.',
 );

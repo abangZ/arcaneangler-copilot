@@ -14,12 +14,21 @@ const FEATURE_BY_PHASE = Object.freeze({
     fishing: '自动钓鱼',
     bait: '自动鱼饵',
     verification: '人机验证',
+    web: 'Web 控制面',
+    control: 'Worker 控制器',
+    page: '游戏页面',
 });
 
 export class StatusReporter {
-    constructor({ logger = console, now = () => new Date() } = {}) {
+    constructor({
+        logger = console,
+        now = () => new Date(),
+        logStore = null,
+    } = {}) {
         this.logger = logger;
         this.now = now;
+        this.logStore = logStore;
+        this.statusListeners = new Set();
         this.value = {
             level: 'idle',
             phase: 'starting',
@@ -33,6 +42,19 @@ export class StatusReporter {
 
     get() {
         return structuredClone(this.value);
+    }
+
+    getLogs(options) {
+        return this.logStore?.get(options) || [];
+    }
+
+    subscribeStatus(listener) {
+        this.statusListeners.add(listener);
+        return () => this.statusListeners.delete(listener);
+    }
+
+    subscribeLogs(listener) {
+        return this.logStore?.subscribe(listener) || (() => {});
     }
 
     async update(patch, { record = true } = {}) {
@@ -59,14 +81,24 @@ export class StatusReporter {
         };
 
         if (record && normalizedPatch.message) {
-            this.write(next);
+            await this.write(next);
         }
 
         this.value = next;
-        return this.get();
+        const snapshot = this.get();
+
+        for (const listener of this.statusListeners) {
+            try {
+                listener(snapshot);
+            } catch {
+                // 控制面订阅者失败不能影响自动化状态更新。
+            }
+        }
+
+        return snapshot;
     }
 
-    write(status) {
+    async write(status) {
         const line = [
             `[${status.updatedAt}]`,
             `[${status.level.toUpperCase()}/${status.phase}]`,
@@ -81,6 +113,25 @@ export class StatusReporter {
         } else {
             this.logger.log(line);
         }
+
+        await this.logStore?.append(status);
+    }
+
+    async log(patch) {
+        const phaseFeature = patch.phase
+            ? FEATURE_BY_PHASE[patch.phase]
+            : null;
+        const entry = {
+            ...this.value,
+            ...patch,
+            activeFeature: patch.activeFeature ||
+                phaseFeature ||
+                this.value.activeFeature,
+            updatedAt: this.now().toISOString(),
+        };
+
+        await this.write(entry);
+        return structuredClone(entry);
     }
 
     async incrementCast() {

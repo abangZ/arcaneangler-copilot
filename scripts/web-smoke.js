@@ -1,0 +1,383 @@
+import assert from 'node:assert/strict';
+import { createHmac, pbkdf2Sync } from 'node:crypto';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
+import { LogStore } from '../src/core/log-store.js';
+import {
+    DEFAULT_SETTINGS,
+    SettingsValidationError,
+    validateSettings,
+} from '../src/core/settings-schema.js';
+import { SettingsStore } from '../src/core/settings-store.js';
+import { StatusReporter } from '../src/core/status-reporter.js';
+import { WorkerController } from '../src/core/worker-controller.js';
+import { AuthService } from '../src/web/auth-service.js';
+import { ControlServer } from '../src/web/control-server.js';
+
+const tempDirectory = await fs.mkdtemp(
+    path.join(os.tmpdir(), 'arcane-web-smoke-'),
+);
+const events = [];
+let workerNumber = 0;
+
+function createFakeWorker() {
+    const id = ++workerNumber;
+    let resolveCompletion;
+    const completionPromise = new Promise(resolve => {
+        resolveCompletion = resolve;
+    });
+
+    return {
+        start: async () => events.push(`start:${id}`),
+        stop: async signal => {
+            events.push(`stop:${id}:${signal}`);
+            resolveCompletion();
+        },
+        completion: () => completionPromise,
+        getState: () => ({
+            browserOpen: true,
+            browserSuspended: false,
+            scheduleMode: 'active',
+        }),
+    };
+}
+
+function originHeaders(origin, cookie = null, csrfToken = null) {
+    return {
+        Origin: origin,
+        ...(cookie ? { Cookie: cookie } : {}),
+        ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
+    };
+}
+
+async function requestJson(origin, pathname, options = {}) {
+    const response = await fetch(`${origin}${pathname}`, options);
+    const body = await response.json().catch(() => ({}));
+
+    return { response, body };
+}
+
+try {
+    const settingsFile = path.join(tempDirectory, 'settings.json');
+    const settingsStore = new SettingsStore({ filePath: settingsFile });
+    const logStore = new LogStore({
+        directory: path.join(tempDirectory, 'logs'),
+    });
+
+    await Promise.all([settingsStore.initialize(), logStore.initialize()]);
+    assert.equal(settingsStore.get().configured, false);
+    assert.throws(() => validateSettings({}), SettingsValidationError);
+
+    const concurrentStore = new SettingsStore({
+        filePath: path.join(tempDirectory, 'concurrent-settings.json'),
+    });
+    await concurrentStore.initialize();
+    const concurrentA = structuredClone(DEFAULT_SETTINGS);
+    const concurrentB = structuredClone(DEFAULT_SETTINGS);
+    concurrentA.general.character = 'Alpha';
+    concurrentB.general.character = 'Beta';
+    const concurrentResults = await Promise.allSettled([
+        concurrentStore.update(concurrentA, { expectedRevision: 0 }),
+        concurrentStore.update(concurrentB, { expectedRevision: 0 }),
+    ]);
+    assert.equal(
+        concurrentResults.filter(result => result.status === 'fulfilled').length,
+        1,
+    );
+    assert.equal(
+        concurrentResults.filter(result =>
+            result.status === 'rejected' && result.reason.statusCode === 409,
+        ).length,
+        1,
+    );
+    assert.equal(concurrentStore.get().revision, 1);
+
+    const output = { log: [], error: [] };
+    const reporter = new StatusReporter({
+        logStore,
+        logger: {
+            log: line => output.log.push(line),
+            error: line => output.error.push(line),
+        },
+    });
+    const controller = new WorkerController({
+        settingsStore,
+        reporter,
+        createWorker: createFakeWorker,
+    });
+    const authService = new AuthService({
+        username: 'angler',
+        password: 'correct horse battery staple',
+    });
+    const server = new ControlServer({
+        host: '127.0.0.1',
+        port: 0,
+        authService,
+        settingsStore,
+        controller,
+        reporter,
+    });
+
+    const address = await server.start();
+    const origin = `http://127.0.0.1:${address.port}`;
+
+    try {
+        let result = await requestJson(origin, '/api/state');
+        assert.equal(result.response.status, 401);
+
+        const pageResponse = await fetch(origin);
+        assert.equal(pageResponse.status, 200);
+        assert.match(await pageResponse.text(), /Copilot 控制台/);
+
+        result = await requestJson(origin, '/api/auth/challenge', {
+            method: 'POST',
+            headers: {
+                ...originHeaders(origin),
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ username: 'angler' }),
+        });
+        assert.equal(result.response.status, 200);
+
+        const challenge = result.body;
+        const key = pbkdf2Sync(
+            'correct horse battery staple',
+            Buffer.from(challenge.salt, 'base64url'),
+            challenge.iterations,
+            32,
+            'sha256',
+        );
+        const proof = createHmac('sha256', key)
+            .update([
+                challenge.challengeId,
+                challenge.nonce,
+                'angler',
+            ].join('.'))
+            .digest('base64url');
+
+        result = await requestJson(origin, '/api/auth/login', {
+            method: 'POST',
+            headers: {
+                ...originHeaders(origin),
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                username: 'angler',
+                challengeId: challenge.challengeId,
+                proof,
+            }),
+        });
+        assert.equal(result.response.status, 200);
+        const setCookie = result.response.headers.get('set-cookie');
+        const cookie = setCookie.split(';')[0];
+        const { csrfToken } = result.body;
+        assert.ok(cookie.startsWith('arcane_session='));
+        assert.match(setCookie, /HttpOnly/);
+        assert.match(setCookie, /SameSite=Strict/);
+        assert.doesNotMatch(setCookie, /; Secure/);
+        assert.equal(result.body.secureTransport, false);
+
+        result = await requestJson(origin, '/api/auth/login', {
+            method: 'POST',
+            headers: {
+                ...originHeaders(origin),
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                username: 'angler',
+                challengeId: challenge.challengeId,
+                proof,
+            }),
+        });
+        assert.equal(result.response.status, 401);
+
+        result = await requestJson(origin, '/api/settings', {
+            headers: originHeaders(origin, cookie),
+        });
+        assert.equal(result.body.configured, false);
+
+        result = await requestJson(origin, '/api/actions/start', {
+            method: 'POST',
+            headers: {
+                ...originHeaders(origin, cookie, csrfToken),
+                'Content-Type': 'application/json',
+            },
+            body: '{}',
+        });
+        assert.equal(result.response.status, 409);
+
+        const configuredSettings = structuredClone(DEFAULT_SETTINGS);
+        configuredSettings.features.map.mode = 'auto';
+        configuredSettings.features.bait.enabled = true;
+        configuredSettings.features.bait.selectedBaitTier = 2;
+
+        result = await requestJson(origin, '/api/settings', {
+            method: 'PUT',
+            headers: {
+                ...originHeaders(origin, cookie, csrfToken),
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                revision: 0,
+                settings: configuredSettings,
+            }),
+        });
+        assert.equal(result.response.status, 200);
+        assert.equal(result.body.configured, true);
+        assert.equal(result.body.revision, 1);
+
+        const fileMode = (await fs.stat(settingsFile)).mode & 0o777;
+        assert.equal(fileMode, 0o600);
+
+        result = await requestJson(origin, '/api/actions/start', {
+            method: 'POST',
+            headers: {
+                ...originHeaders(origin, cookie, csrfToken),
+                'Content-Type': 'application/json',
+            },
+            body: '{}',
+        });
+        assert.equal(result.body.controller.mode, 'running');
+
+        const restartedSettings = structuredClone(configuredSettings);
+        restartedSettings.browser.headless = false;
+        result = await requestJson(origin, '/api/settings', {
+            method: 'PUT',
+            headers: {
+                ...originHeaders(origin, cookie, csrfToken),
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                revision: 1,
+                settings: restartedSettings,
+            }),
+        });
+        assert.equal(result.response.status, 200);
+        assert.equal(result.body.revision, 2);
+        assert.equal(result.body.controller.mode, 'running');
+        assert.deepEqual(events, [
+            'start:1',
+            'stop:1:settings-restart',
+            'start:2',
+        ]);
+
+        const liveSettings = structuredClone(restartedSettings);
+        liveSettings.schedule.activeMinMinutes = 41;
+        result = await requestJson(origin, '/api/settings', {
+            method: 'PUT',
+            headers: {
+                ...originHeaders(origin, cookie, csrfToken),
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                revision: 2,
+                settings: liveSettings,
+            }),
+        });
+        assert.equal(result.response.status, 200);
+        assert.equal(result.body.revision, 3);
+        assert.equal(events.length, 3);
+
+        await reporter.update({
+            level: 'running',
+            phase: 'fishing',
+            target: '等待下一次抛竿',
+            message: 'Web smoke log.',
+        });
+
+        const abortController = new AbortController();
+        const streamResponse = await fetch(`${origin}/api/events`, {
+            headers: originHeaders(origin, cookie),
+            signal: abortController.signal,
+        });
+        assert.equal(streamResponse.status, 200);
+        const reader = streamResponse.body.getReader();
+        const chunk = await reader.read();
+        const streamText = new TextDecoder().decode(chunk.value);
+
+        assert.match(streamText, /event: log/);
+        assert.match(streamText, /event: controller/);
+        abortController.abort();
+
+        const latestLogId = reporter.getLogs().at(-1).id;
+        const resumedAbortController = new AbortController();
+        const resumedStreamResponse = await fetch(
+            `${origin}/api/events?afterId=${latestLogId}`,
+            {
+                headers: originHeaders(origin, cookie),
+                signal: resumedAbortController.signal,
+            },
+        );
+        const resumedReader = resumedStreamResponse.body.getReader();
+        const resumedChunk = await resumedReader.read();
+        const resumedStreamText = new TextDecoder().decode(
+            resumedChunk.value,
+        );
+
+        assert.equal(resumedStreamResponse.status, 200);
+        assert.doesNotMatch(resumedStreamText, /event: log/);
+        assert.match(resumedStreamText, /event: controller/);
+        resumedAbortController.abort();
+
+        for (const [action, expectedMode] of [
+            ['pause', 'paused'],
+            ['resume', 'running'],
+            ['stop', 'stopped'],
+        ]) {
+            result = await requestJson(origin, `/api/actions/${action}`, {
+                method: 'POST',
+                headers: {
+                    ...originHeaders(origin, cookie, csrfToken),
+                    'Content-Type': 'application/json',
+                },
+                body: '{}',
+            });
+            assert.equal(result.body.controller.mode, expectedMode);
+        }
+
+        assert.deepEqual(events, [
+            'start:1',
+            'stop:1:settings-restart',
+            'start:2',
+            'stop:2:manual-pause',
+            'start:3',
+            'stop:3:manual-stop',
+        ]);
+
+        result = await requestJson(origin, '/api/settings', {
+            method: 'PUT',
+            headers: {
+                ...originHeaders(origin, cookie, 'wrong-token'),
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                revision: 3,
+                settings: liveSettings,
+            }),
+        });
+        assert.equal(result.response.status, 403);
+
+        const reloadedStore = new SettingsStore({ filePath: settingsFile });
+        await reloadedStore.initialize();
+        assert.equal(reloadedStore.get().configured, true);
+        assert.equal(
+            reloadedStore.get().settings.features.bait.selectedBaitTier,
+            2,
+        );
+        assert.equal(
+            reloadedStore.get().settings.schedule.activeMinMinutes,
+            41,
+        );
+        assert.ok(reporter.getLogs().length >= 5);
+    } finally {
+        await server.close();
+    }
+} finally {
+    await fs.rm(tempDirectory, { recursive: true, force: true });
+}
+
+console.log(
+    'Web smoke passed: challenge login, session/CSRF, persisted settings, SSE logs and Worker controls work.',
+);

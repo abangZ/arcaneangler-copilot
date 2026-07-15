@@ -25,13 +25,27 @@ export class OperationScheduler {
         now = () => new Date(),
         random = randomInteger,
     } = {}) {
-        this.config = config;
+        this.config = structuredClone(config);
+        this.configurationKey = JSON.stringify(this.config);
         this.now = now;
         this.random = random;
         this.mode = OPERATION_STATES.IDLE;
         this.activeUntil = 0;
         this.restUntil = 0;
         this.restDurationMinutes = 0;
+    }
+
+    updateConfig(config) {
+        const configurationKey = JSON.stringify(config);
+
+        if (configurationKey === this.configurationKey) {
+            return false;
+        }
+
+        this.config = structuredClone(config);
+        this.configurationKey = configurationKey;
+        this.reset();
+        return true;
     }
 
     reset() {
@@ -133,6 +147,8 @@ export class OperationScheduler {
                 allowed: false,
                 mode: OPERATION_STATES.QUIET,
                 transitioned,
+                quietStartHour: this.config.quietStartHour,
+                quietEndHour: this.config.quietEndHour,
                 resumeAt,
                 waitMs: resumeAt.getTime() - nowMs,
             };

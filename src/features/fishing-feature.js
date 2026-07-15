@@ -5,14 +5,13 @@ import {
 } from '../core/browser-utils.js';
 
 export class FishingFeature {
-    constructor({ session, settings, reporter, config }) {
+    constructor({ session, settings, reporter }) {
         this.id = 'fishing';
         this.label = '自动钓鱼';
         this.priority = 100;
         this.session = session;
         this.settings = settings;
         this.reporter = reporter;
-        this.config = config;
         this.initialized = false;
         this.lastClassicSetting = null;
         this.lastProgressAt = Date.now();
@@ -110,7 +109,8 @@ export class FishingFeature {
                 }).catch(() => {});
             }
         } else if (
-            Date.now() - this.lastProgressAt >= this.config.stallTimeoutMs
+            Date.now() - this.lastProgressAt >=
+                settings.advanced.stallTimeoutMs
         ) {
             await this.session.captureScreenshot('stalled');
             await this.session.bootstrap({ reload: true });
@@ -124,7 +124,7 @@ export class FishingFeature {
             }, { record: false });
         }
 
-        await sleep(this.config.pollIntervalMs);
+        await sleep(settings.advanced.pollIntervalMs);
         return true;
     }
 }
