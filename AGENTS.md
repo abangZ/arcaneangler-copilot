@@ -5,7 +5,7 @@
 - 本项目是面向 Linux 服务器长期运行的 Playwright 自动化服务，默认使用无头 Chromium。
 - 当前交互入口是独立 Web 控制台；服务启动时只启动控制面，用户保存配置并点击启动后才创建 Playwright Worker。不要在游戏页面注入操作面板。
 - `README.md` 面向开源用户，只写当前可用能力、安装、配置、运行、排障和免责声明；不要写会话讨论、实现过程、历史方案、测试账号或本地绝对路径。
-- 内部架构说明放在 `docs/architecture.md`；阶段性交接和页面结构证据放在 `docs/auto-bait-handoff.md`，不要塞进 README。
+- 内部架构说明放在 `docs/architecture.md`；阶段性交接和页面结构证据不要进入公开仓库或 README。
 
 ## 配置与日志
 
