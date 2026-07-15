@@ -6,6 +6,9 @@ import { StatusReporter } from '../src/core/status-reporter.js';
 const settings = RuntimeSettings.fromConfig({
     automationEnabled: true,
     autoFishing: true,
+    mapMode: 'auto',
+    targetBiomeId: null,
+    mapCheckIntervalMs: 3_600_000,
     autoVerify: true,
     autoBait: true,
     baitId: 'bait_default',
@@ -25,6 +28,11 @@ assert.deepEqual(settings.get(), {
             enforceClassicMode: true,
             clickDelayMinMs: 250,
             clickDelayMaxMs: 800,
+        },
+        map: {
+            mode: 'auto',
+            targetBiomeId: null,
+            checkIntervalMs: 3_600_000,
         },
         verification: { enabled: true },
         bait: {
@@ -56,7 +64,7 @@ await reporter.update({
     phase: 'ready',
     target: '启动自动化功能',
     activeFeature: '挂机服务',
-    message: '已加载 3 个自动化功能。',
+    message: '已加载 4 个自动化功能。',
 });
 await reporter.incrementCast();
 await reporter.update({
@@ -73,7 +81,7 @@ await reporter.update({
 });
 
 assert.deepEqual(output.log, [
-    '[2026-07-15T08:00:00.000Z] [RUNNING/ready] [挂机服务] 目标：启动自动化功能 已加载 3 个自动化功能。 抛竿：0',
+    '[2026-07-15T08:00:00.000Z] [RUNNING/ready] [挂机服务] 目标：启动自动化功能 已加载 4 个自动化功能。 抛竿：0',
     '[2026-07-15T08:00:00.000Z] [RUNNING/fishing] [自动钓鱼] 目标：等待下一次抛竿 完成第 1 次抛竿。 抛竿：1',
 ]);
 assert.deepEqual(output.error, [

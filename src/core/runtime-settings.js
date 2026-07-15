@@ -13,6 +13,11 @@ export class RuntimeSettings {
                     clickDelayMinMs: config.clickDelayMinMs,
                     clickDelayMaxMs: config.clickDelayMaxMs,
                 },
+                map: {
+                    mode: config.mapMode,
+                    targetBiomeId: config.targetBiomeId,
+                    checkIntervalMs: config.mapCheckIntervalMs,
+                },
                 verification: {
                     enabled: config.autoVerify,
                 },

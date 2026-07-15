@@ -10,6 +10,7 @@ const FEATURE_BY_PHASE = Object.freeze({
     reward: '每日奖励',
     navigation: '页面导航',
     settings: '自动钓鱼',
+    map: '自动地图',
     fishing: '自动钓鱼',
     bait: '自动鱼饵',
     verification: '人机验证',

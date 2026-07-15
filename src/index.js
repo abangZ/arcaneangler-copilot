@@ -9,6 +9,7 @@ import { RuntimeSettings } from './core/runtime-settings.js';
 import { StatusReporter } from './core/status-reporter.js';
 import { BaitFeature } from './features/bait-feature.js';
 import { FishingFeature } from './features/fishing-feature.js';
+import { MapFeature } from './features/map-feature.js';
 import { VerificationFeature } from './features/verification-feature.js';
 import { ArcaneAnglerPage } from './site/arcane-angler-page.js';
 
@@ -25,12 +26,25 @@ function formatHour(hour) {
     return `${String(hour).padStart(2, '0')}:00`;
 }
 
+function describeMapSettings(mapSettings) {
+    if (mapSettings.mode === 'auto') {
+        return '自动';
+    }
+
+    if (mapSettings.mode === 'fixed') {
+        return `固定 Biome ${mapSettings.targetBiomeId}`;
+    }
+
+    return '关闭';
+}
+
 function describeRuntime(config, settings, profile) {
     const snapshot = settings.get();
     const details = [
         `无头模式=${enabledLabel(config.headless)}`,
         `自动化=${enabledLabel(snapshot.automationEnabled)}`,
         `自动钓鱼=${enabledLabel(snapshot.features.fishing.enabled)}`,
+        `地图模式=${describeMapSettings(snapshot.features.map)}`,
         `自动鱼饵=${enabledLabel(snapshot.features.bait.enabled)}`,
         `自动验证=${enabledLabel(snapshot.features.verification.enabled)}`,
         `Chromium=${profile.browserVersion}`,
@@ -160,6 +174,10 @@ async function main() {
     });
 
     engine.register(new VerificationFeature({
+        session,
+        reporter,
+    }));
+    engine.register(new MapFeature({
         session,
         reporter,
     }));

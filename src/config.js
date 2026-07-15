@@ -48,6 +48,16 @@ function readBoolean(name, fallback) {
     throw new Error(`${name} 必须是 true 或 false。`);
 }
 
+function readChoice(name, fallback, choices) {
+    const value = readString(name, fallback).toLowerCase();
+
+    if (!choices.includes(value)) {
+        throw new Error(`${name} 必须是 ${choices.join('、')} 之一。`);
+    }
+
+    return value;
+}
+
 function readInteger(
     name,
     fallback,
@@ -118,6 +128,23 @@ if (baitPurchaseQuantity % 100 !== 0) {
     throw new Error('ARCANE_BAIT_PURCHASE_QUANTITY 必须是 100 的倍数。');
 }
 
+const mapMode = readChoice(
+    'ARCANE_MAP_MODE',
+    'off',
+    ['off', 'fixed', 'auto'],
+);
+const targetBiomeId = readInteger(
+    'ARCANE_TARGET_BIOME_ID',
+    0,
+    { max: 999 },
+);
+
+if (mapMode === 'fixed' && targetBiomeId < 1) {
+    throw new Error(
+        'ARCANE_MAP_MODE=fixed 时必须配置 ARCANE_TARGET_BIOME_ID。',
+    );
+}
+
 const activeMinMinutes = readInteger(
     'ARCANE_ACTIVE_MIN_MINUTES',
     40,
@@ -186,6 +213,13 @@ export const config = Object.freeze({
     headless: readBoolean('ARCANE_HEADLESS', true),
     automationEnabled: readBoolean('ARCANE_AUTOMATION_ENABLED', true),
     autoFishing: readBoolean('ARCANE_AUTO_FISHING', true),
+    mapMode,
+    targetBiomeId: targetBiomeId || null,
+    mapCheckIntervalMs: readInteger(
+        'ARCANE_MAP_CHECK_INTERVAL_MS',
+        3_600_000,
+        { min: 60_000, max: 86_400_000 },
+    ),
     autoBait: readBoolean('ARCANE_AUTO_BAIT', false),
     baitId: readString('ARCANE_BAIT_ID'),
     baitRestockThreshold: readInteger(

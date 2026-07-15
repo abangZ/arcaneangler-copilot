@@ -121,7 +121,9 @@ export class ArcaneAnglerPage {
         const navigation = await this.getSidebarNavigation();
         const destinationIndexes = {
             fishing: 0,
+            biomes: 1,
             equipment: 4,
+            events: 12,
             options: 20,
         };
 
@@ -140,7 +142,9 @@ export class ArcaneAnglerPage {
 
         const fallbackLabels = {
             fishing: 'Fishing',
+            biomes: 'Biomes',
             equipment: 'Equipment',
+            events: 'Events',
             options: 'Options',
         };
         const fallbackLabel = fallbackLabels[destination];
@@ -579,6 +583,266 @@ export class ArcaneAnglerPage {
         await waitUntil(() => this.isFishingPage(), {
             timeoutMs: this.config.navigationTimeoutMs,
             message: '无法进入钓鱼页面',
+            shouldStop: this.shouldStop,
+        });
+    }
+
+    async getMapAutomationState({ includeAutoData = true } = {}) {
+        const state = await this.page.evaluate(async shouldLoadAutoData => {
+            if (!window.ApiService) {
+                throw new Error('页面未提供 ApiService。');
+            }
+
+            const [playerResponse, weatherResponse, derbyResponse] =
+                await Promise.all([
+                    window.ApiService.getPlayerData(),
+                    shouldLoadAutoData
+                        ? window.ApiService.getAllBiomeWeather()
+                        : Promise.resolve({}),
+                    shouldLoadAutoData
+                        ? window.ApiService.getCurrentDerbies()
+                        : Promise.resolve({}),
+                ]);
+            const player = playerResponse?.player || playerResponse;
+            const weather = weatherResponse?.weather || weatherResponse || {};
+            const unlockedBiomes = [
+                ...new Set((player?.unlockedBiomes || [1]).map(Number)),
+            ].filter(id => Number.isSafeInteger(id) && id >= 1);
+            const unlockedSet = new Set(unlockedBiomes);
+            const expectedDerbyType = player?.is_ironman
+                ? 'ironman'
+                : 'normal';
+            const upcoming = Array.isArray(derbyResponse?.upcoming)
+                ? derbyResponse.upcoming
+                : [];
+            const eligibleDerbies = upcoming.filter(derby => {
+                const derbyType = String(derby.derby_type || 'normal');
+
+                return (
+                    !derby.is_registered &&
+                    unlockedSet.has(Number(derby.biome_id)) &&
+                    (
+                        derbyType === 'global' ||
+                        derbyType === expectedDerbyType
+                    )
+                );
+            });
+            const active = derbyResponse?.active || null;
+            const biomes = Object.fromEntries(
+                Object.entries(window.BIOMES || {}).map(([id, biome]) => [
+                    Number(id),
+                    { name: String(biome?.name || `Biome ${id}`) },
+                ]),
+            );
+
+            return {
+                currentBiome: Number(player?.currentBiome),
+                unlockedBiomes,
+                boat: player?.boat
+                    ? {
+                        role: String(player.boat.role || ''),
+                    }
+                    : null,
+                weatherByBiome: Object.fromEntries(
+                    Object.entries(weather).map(([id, value]) => [
+                        Number(id),
+                        {
+                            weather: String(value?.weather || 'unknown'),
+                            xpBonus: Number(value?.xpBonus || 0),
+                        },
+                    ]),
+                ),
+                biomes,
+                activeDerby: active
+                    ? {
+                        id: Number(active.id),
+                        number: Number(active.derby_number) || null,
+                        biomeId: Number(active.biome_id),
+                        isRegistered: Boolean(active.is_registered),
+                    }
+                    : null,
+                eligibleDerbyCount: eligibleDerbies.length,
+            };
+        }, includeAutoData);
+
+        if (
+            !Number.isSafeInteger(state.currentBiome) ||
+            state.currentBiome < 1
+        ) {
+            throw new Error('无法读取当前地图。');
+        }
+
+        return state;
+    }
+
+    async getRegisterAllDerbiesButton() {
+        return firstVisible(this.page.locator(
+            'button[title*="all derbies" i]',
+        )) || firstVisible(this.page.getByRole('button', {
+            name: /Register All|一键.*报名/i,
+        }));
+    }
+
+    async registerEligibleDerbiesThroughUi(previousEligibleCount) {
+        await this.navigateToSidebarPage('events');
+
+        let registerAllButton = null;
+
+        await waitUntil(async () => {
+            registerAllButton = await this.getRegisterAllDerbiesButton();
+            return Boolean(registerAllButton);
+        }, {
+            timeoutMs: this.config.navigationTimeoutMs,
+            message: 'Events 页面中找不到一键报名按钮',
+            shouldStop: this.shouldStop,
+        });
+
+        const firstRegistrationResponse = this.page.waitForResponse(
+            response => {
+                const request = response.request();
+                const pathname = new URL(response.url()).pathname;
+
+                return (
+                    request.method() === 'POST' &&
+                    /^\/api\/derby\/\d+\/register$/.test(pathname)
+                );
+            },
+            { timeout: this.config.navigationTimeoutMs },
+        ).catch(() => null);
+
+        await this.trustedClick(registerAllButton);
+        await firstRegistrationResponse;
+        await waitUntil(async () => {
+            const latestButton = await this.getRegisterAllDerbiesButton();
+            return !latestButton || await latestButton.isEnabled();
+        }, {
+            timeoutMs: this.config.navigationTimeoutMs,
+            message: '一键报名操作没有完成',
+            shouldStop: this.shouldStop,
+        });
+
+        const latestState = await this.getMapAutomationState();
+
+        return {
+            registeredCount: Math.max(
+                0,
+                previousEligibleCount - latestState.eligibleDerbyCount,
+            ),
+            remainingCount: latestState.eligibleDerbyCount,
+        };
+    }
+
+    getBiomeCards() {
+        return this.page.locator(
+            'div.max-w-4xl.mx-auto div.space-y-4 > ' +
+            'div.p-4.sm\\:p-5.rounded-lg.border-2',
+        );
+    }
+
+    async getBiomeCard(biomeId, biomeName) {
+        const cards = this.getBiomeCards();
+        const count = await cards.count();
+
+        for (let index = 0; index < count; index += 1) {
+            const card = cards.nth(index);
+            const heading = await card.locator('h3').first()
+                .textContent() || '';
+            const text = await card.innerText();
+
+            if (
+                heading.trim() === biomeName ||
+                new RegExp(`(^|\\n)Biome\\s+${biomeId}(\\n|$)`, 'i')
+                    .test(text)
+            ) {
+                return card;
+            }
+        }
+
+        return null;
+    }
+
+    async openBiomeSelector(biomeId, biomeName) {
+        await this.navigateToSidebarPage('biomes');
+        await waitUntil(async () => {
+            const cards = this.getBiomeCards();
+            return await cards.count() > 0 && await isVisible(cards.first());
+        }, {
+            timeoutMs: this.config.navigationTimeoutMs,
+            message: 'Biomes 页面中没有出现地图卡片',
+            shouldStop: this.shouldStop,
+        });
+
+        const buttons = this.page.locator(
+            'div.max-w-4xl.mx-auto button',
+        );
+        const count = await buttons.count();
+        let pageButton = null;
+        let pageStart = null;
+
+        for (let index = 0; index < count; index += 1) {
+            const button = buttons.nth(index);
+            const text = (await button.textContent() || '').trim();
+            const range = text.match(/^(\d+)\s*-\s*(\d+)$/);
+
+            if (
+                range &&
+                biomeId >= Number(range[1]) &&
+                biomeId <= Number(range[2])
+            ) {
+                pageButton = button;
+                pageStart = Number(range[1]);
+                break;
+            }
+        }
+
+        let card = null;
+
+        if (pageButton) {
+            await this.trustedClick(pageButton);
+            const cardIndex = biomeId - pageStart;
+
+            await waitUntil(async () => {
+                const cards = this.getBiomeCards();
+
+                if (
+                    cardIndex < 0 ||
+                    await cards.count() <= cardIndex ||
+                    !(await isVisible(cards.nth(cardIndex)))
+                ) {
+                    return false;
+                }
+
+                card = cards.nth(cardIndex);
+                return true;
+            }, {
+                timeoutMs: this.config.navigationTimeoutMs,
+                message: `Biomes 页面中找不到 Biome ${biomeId} 卡片`,
+                shouldStop: this.shouldStop,
+            });
+        } else {
+            card = await this.getBiomeCard(biomeId, biomeName);
+        }
+
+        if (!card) {
+            throw new Error(`Biomes 页面中找不到 Biome ${biomeId} 卡片。`);
+        }
+
+        return card;
+    }
+
+    async changeBiomeThroughUi(biomeId, biomeName) {
+        const card = await this.openBiomeSelector(biomeId, biomeName);
+
+        await this.trustedClick(card);
+        await waitUntil(async () => {
+            if (!(await this.isFishingPage())) {
+                return false;
+            }
+
+            return await this.getCurrentBiomeId() === biomeId;
+        }, {
+            timeoutMs: this.config.navigationTimeoutMs,
+            message: `点击后没有进入 Biome ${biomeId}`,
             shouldStop: this.shouldStop,
         });
     }
