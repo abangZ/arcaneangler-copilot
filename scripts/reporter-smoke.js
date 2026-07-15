@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
+import { LogStore } from '../src/core/log-store.js';
 import { RuntimeSettings } from '../src/core/runtime-settings.js';
 import { DEFAULT_SETTINGS } from '../src/core/settings-schema.js';
 import { StatusReporter } from '../src/core/status-reporter.js';
@@ -61,6 +65,57 @@ assert.deepEqual(output.error, [
     '[2026-07-15T08:00:00.000Z] [ERROR/recovery] [恢复机制] 目标：恢复自动化 页面恢复失败。 抛竿：1',
 ]);
 
+const tempDirectory = await fs.mkdtemp(
+    path.join(os.tmpdir(), 'arcane-reporter-smoke-'),
+);
+
+try {
+    for (let day = 1; day <= 8; day += 1) {
+        const timestamp = `2026-07-${String(day).padStart(2, '0')}T00:00:00.000Z`;
+
+        await fs.writeFile(
+            path.join(tempDirectory, `${timestamp.slice(0, 10)}.jsonl`),
+            `${JSON.stringify({ id: day, updatedAt: timestamp })}\n`,
+        );
+    }
+
+    const logStore = new LogStore({
+        directory: tempDirectory,
+        retentionDays: 3,
+    });
+
+    await logStore.initialize();
+    assert.deepEqual(
+        (await fs.readdir(tempDirectory)).sort(),
+        [
+            '2026-07-06.jsonl',
+            '2026-07-07.jsonl',
+            '2026-07-08.jsonl',
+        ],
+    );
+
+    await logStore.append({
+        level: 'running',
+        updatedAt: '2026-07-09T00:00:00.000Z',
+        message: '跨日日志。',
+    });
+    assert.deepEqual(
+        (await fs.readdir(tempDirectory)).sort(),
+        [
+            '2026-07-07.jsonl',
+            '2026-07-08.jsonl',
+            '2026-07-09.jsonl',
+        ],
+    );
+    assert.equal(
+        (await fs.stat(path.join(tempDirectory, '2026-07-09.jsonl')))
+            .mode & 0o777,
+        0o600,
+    );
+} finally {
+    await fs.rm(tempDirectory, { recursive: true, force: true });
+}
+
 console.log(
-    'Reporter smoke passed: web settings snapshots, structured output and duplicate suppression work.',
+    'Reporter smoke passed: structured output, duplicate suppression and rolling daily logs work.',
 );

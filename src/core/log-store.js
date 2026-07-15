@@ -14,21 +14,33 @@ export class LogStore {
         this.nextId = 1;
         this.listeners = new Set();
         this.writeQueue = Promise.resolve();
+        this.lastRetentionCheckFile = null;
     }
 
-    async initialize() {
-        await fs.mkdir(this.directory, { recursive: true, mode: 0o700 });
-        await fs.chmod(this.directory, 0o700);
-
-        const files = (await fs.readdir(this.directory))
+    async listLogFiles() {
+        return (await fs.readdir(this.directory))
             .filter(file => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(file))
             .sort();
+    }
+
+    async pruneExpiredFiles() {
+        const files = await this.listLogFiles();
         const retainedFiles = files.slice(-this.retentionDays);
         const expiredFiles = files.slice(0, -this.retentionDays);
 
         await Promise.all(expiredFiles.map(file =>
             fs.unlink(path.join(this.directory, file)).catch(() => {}),
         ));
+        return retainedFiles;
+    }
+
+    async initialize() {
+        await fs.mkdir(this.directory, { recursive: true, mode: 0o700 });
+        await fs.chmod(this.directory, 0o700);
+
+        const retainedFiles = await this.pruneExpiredFiles();
+
+        this.lastRetentionCheckFile = retainedFiles.at(-1) || null;
 
         for (const file of retainedFiles) {
             await fs.chmod(path.join(this.directory, file), 0o600)
@@ -83,16 +95,19 @@ export class LogStore {
         this.entries.push(storedEntry);
         this.entries = this.entries.slice(-this.maxEntries);
 
-        const filePath = path.join(
-            this.directory,
-            logFileName(storedEntry.updatedAt),
-        );
+        const fileName = logFileName(storedEntry.updatedAt);
+        const filePath = path.join(this.directory, fileName);
         const line = `${JSON.stringify(storedEntry)}\n`;
 
         this.writeQueue = this.writeQueue
             .then(async () => {
                 await fs.appendFile(filePath, line, { mode: 0o600 });
                 await fs.chmod(filePath, 0o600);
+
+                if (this.lastRetentionCheckFile !== fileName) {
+                    await this.pruneExpiredFiles();
+                    this.lastRetentionCheckFile = fileName;
+                }
             })
             .catch(() => {});
         await this.writeQueue;
