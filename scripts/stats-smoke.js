@@ -153,7 +153,7 @@ try {
     assert.equal(snapshot.today.gold, 109);
     assert.equal(snapshot.today.fishGold, 80);
     assert.equal(snapshot.today.baitCost, 10);
-    assert.equal(snapshot.today.netGold, 99);
+    assert.equal(snapshot.today.netGold, 179);
     assert.equal(snapshot.today.xp, 1_241);
     assert.equal(snapshot.today.treasureChests, 1);
     assert.equal(snapshot.today.gears, 1);
@@ -169,7 +169,7 @@ try {
     assert.equal(snapshot.todayBaitSummaries[0].casts, 1);
     assert.equal(snapshot.biomeSummaries[0].fish, 2);
     assert.equal(snapshot.currentBait.today.gold, 97);
-    assert.equal(snapshot.currentBait.today.netGold, 87);
+    assert.equal(snapshot.currentBait.today.netGold, 167);
     assert.equal(snapshot.currentCombination.total.casts, 1);
     assert.deepEqual(snapshot.lastFish, {
         name: 'Moonfin',

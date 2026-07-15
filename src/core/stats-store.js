@@ -198,7 +198,7 @@ function normalizeLastFish(value) {
 function publicSummary(summary) {
     return {
         ...summary,
-        netGold: summary.gold - summary.baitCost,
+        netGold: summary.gold + summary.fishGold - summary.baitCost,
     };
 }
 

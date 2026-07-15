@@ -176,7 +176,7 @@ HTTP API 和 Web UI 不得直接持有 DOM Locator，也不得绕过 Engine queu
 
 - 只累计 `/cast` 的 `goldGained`、`xpGained`、`relicsGained`、鱼获数量、宝箱、装备和稀有度分类等每竿增量；不使用 `newGold` 等余额字段。
 - v2 同时维护累计值、按服务器本地日期划分的每日值、地图×鱼饵 breakdown，以及按地图/鱼饵派生的汇总和最后鱼获。
-- 已知鱼饵价格按每竿计入成本；未知价格单独计数，不估算成本。Web 快照派生 `netGold = gold - baitCost`。
+- 已知鱼饵价格按每竿计入成本；未知价格单独计数，不估算成本。Web 快照派生 `netGold = gold + fishGold - baitCost`。
 - 保留最近 90 个每日汇总和对应的每日 breakdown；v1 文件原子迁移并保留原累计/每日数据。
 - 数据原子写入 `.data/stats.json`，权限固定为 `0600`。
 - Web 读取当前快照，并通过 `stats` SSE 事件实时更新；统计写入失败不阻断自动化循环。

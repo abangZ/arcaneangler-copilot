@@ -1,4 +1,5 @@
 const LOG_LIMIT = 200;
+const LOG_HISTORY_FETCH_LIMIT = 2_000;
 
 const elementIds = [
     'auth-loading-view', 'login-view', 'login-form', 'login-username',
@@ -9,11 +10,13 @@ const elementIds = [
     'worker-mode', 'status-dot', 'status-message',
     'start-button', 'pause-button', 'resume-button', 'stop-button',
     'today-casts', 'today-gold', 'today-xp', 'today-fish',
-    'current-bait-name', 'current-bait-context',
-    'current-bait-today-casts', 'current-bait-today-fish',
-    'current-bait-today-gold', 'current-bait-today-net',
-    'current-bait-total-casts', 'current-bait-total-gold',
-    'current-bait-total-net', 'current-bait-total-xp',
+    'current-bait-name', 'current-bait-context', 'current-bait-start',
+    'current-bait-casts', 'current-bait-fish', 'current-bait-gold',
+    'current-bait-fish-gold', 'current-bait-bait-cost',
+    'current-bait-net-gold', 'current-bait-xp', 'current-bait-relics',
+    'current-bait-chests', 'current-bait-gears',
+    'current-bait-net-average', 'current-bait-cost-note',
+    'current-bait-rarity-list',
     'player-level', 'player-xp-percent', 'player-xp-bar', 'player-xp-text',
     'level-eta', 'current-biome', 'current-biome-effect',
     'last-fish-empty', 'last-fish-content', 'last-fish-rarity',
@@ -25,10 +28,11 @@ const elementIds = [
     'stats-today-gold', 'stats-today-xp', 'stats-today-relics',
     'stats-today-chests', 'stats-today-gears', 'stats-gold-average',
     'stats-total-casts', 'stats-total-fish', 'stats-total-gold',
-    'stats-total-xp', 'stats-total-bait-cost', 'stats-total-net-gold',
+    'stats-total-fish-gold', 'stats-total-xp', 'stats-total-bait-cost',
+    'stats-total-net-gold',
     'rarity-list', 'daily-stats-body', 'bait-stats-body',
-    'biome-stats-body', 'breakdown-stats-body', 'log-count',
-    'log-level', 'log-list', 'settings-title', 'settings-subtitle',
+    'biome-stats-body', 'log-count', 'verification-history', 'log-level',
+    'log-list', 'settings-title', 'settings-subtitle',
     'settings-back', 'load-error-warning', 'settings-form',
     'settings-revision', 'settings-note', 'save-settings', 'character',
     'headless', 'fishing-enabled', 'classic-mode', 'click-delay-min',
@@ -51,6 +55,7 @@ const state = {
     status: null,
     stats: null,
     logs: [],
+    verificationHistory: [],
     eventSource: null,
     currentView: null,
     setupMode: false,
@@ -274,6 +279,22 @@ function formatDate(value) {
     }).format(new Date(value));
 }
 
+function formatFullDate(value) {
+    if (!value) {
+        return '—';
+    }
+
+    return new Intl.DateTimeFormat('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+    }).format(new Date(value));
+}
+
 function formatElapsed(value) {
     if (!value) {
         return '尚未启动';
@@ -299,6 +320,46 @@ function rarityDisplay(value) {
         label: String(value || '未知'),
         tone: 'unknown',
     };
+}
+
+function renderRarityCounts(container, rarityCounts, emptyMessage) {
+    const entries = Object.entries(rarityCounts || {})
+        .sort(([, left], [, right]) => right - left);
+    const fragment = document.createDocumentFragment();
+
+    for (const [rarity, count] of entries) {
+        const chip = document.createElement('span');
+        const label = document.createElement('span');
+        const amount = document.createElement('strong');
+        const display = rarityDisplay(rarity);
+
+        chip.className = `rarity-chip ${display.tone}`;
+        chip.title = rarity;
+        label.textContent = display.label;
+        amount.textContent = `×${formatNumber(count, 0)}`;
+        chip.append(label, amount);
+        fragment.append(chip);
+    }
+
+    if (entries.length === 0) {
+        const empty = document.createElement('span');
+
+        empty.className = 'muted';
+        empty.textContent = emptyMessage;
+        fragment.append(empty);
+    }
+
+    container.replaceChildren(fragment);
+}
+
+function renderSignedTone(element, value) {
+    const number = Number(value) || 0;
+
+    element.dataset.tone = number > 0
+        ? 'positive'
+        : number < 0
+            ? 'negative'
+            : 'neutral';
 }
 
 function formatEstimate(milliseconds) {
@@ -586,53 +647,79 @@ function renderOverview() {
     elements['today-xp'].textContent = formatNumber(today.xp);
     elements['today-fish'].textContent = formatNumber(today.fish, 0);
 
-    const dashboardBaitId = dashboard?.bait?.id;
+    const dashboardBaitId = dashboard?.bait?.id != null
+        ? String(dashboard.bait.id)
+        : null;
+    const dashboardBiomeId = dashboard?.biome?.id != null
+        ? String(dashboard.biome.id)
+        : null;
     const fallbackCurrentBait = stats.currentBait;
     const baitId = dashboardBaitId || fallbackCurrentBait?.baitId;
-    const matchesFallbackBait = baitId != null &&
-        fallbackCurrentBait?.baitId === baitId;
-    const baitToday = (stats.todayBaitSummaries || [])
-        .find(summary => summary.baitId === baitId) ||
-        (matchesFallbackBait
-            ? fallbackCurrentBait.today
-            : {}) ||
-        {};
-    const baitTotal = (stats.baitSummaries || [])
-        .find(summary => summary.baitId === baitId) ||
-        (matchesFallbackBait
-            ? fallbackCurrentBait.total
-            : {}) ||
-        {};
+    const biomeId = dashboardBiomeId || fallbackCurrentBait?.biomeId;
+    const matchesFallbackCombination = baitId != null &&
+        biomeId != null &&
+        fallbackCurrentBait?.baitId === baitId &&
+        fallbackCurrentBait?.biomeId === biomeId;
+    const currentSummary = (stats.breakdowns || []).find(summary =>
+        summary.baitId === baitId && summary.biomeId === biomeId,
+    ) || (matchesFallbackCombination
+        ? stats.currentCombination?.total
+        : null) || {};
     const baitName = dashboard?.bait?.name ||
-        baitTotal.baitName ||
+        currentSummary.baitName ||
         fallbackCurrentBait?.baitName;
     const baitPrice = dashboard?.bait?.price ??
-        baitTotal.baitPrice ??
+        currentSummary.baitPrice ??
         fallbackCurrentBait?.baitPrice;
     const biomeName = dashboard?.biome?.name ||
+        currentSummary.biomeName ||
         fallbackCurrentBait?.biomeName;
 
     elements['current-bait-name'].textContent = baitName || '暂无鱼饵数据';
     elements['current-bait-context'].textContent = baitId
         ? [
-            biomeName || null,
-            baitPrice == null ? '鱼饵成本未知' : `单价 ${formatNumber(baitPrice)}`,
+            biomeId && biomeName ? `[B${biomeId}] ${biomeName}` : biomeName,
+            baitPrice == null
+                ? '鱼饵成本未知'
+                : `单价 ${formatNumber(baitPrice)} 金币/竿`,
         ].filter(Boolean).join(' · ')
-        : '完成一次抛竿后显示。';
+        : '等待 Worker 读取当前地图和鱼饵。';
+    elements['current-bait-start'].textContent = currentSummary.startedAt
+        ? `统计起点：${formatFullDate(currentSummary.startedAt)}`
+        : '当前范围暂无数据';
+    const netAverage = currentSummary.casts > 0
+        ? currentSummary.netGold / currentSummary.casts
+        : 0;
     const baitValues = {
-        'current-bait-today-casts': [baitToday.casts, 0],
-        'current-bait-today-fish': [baitToday.fish, 0],
-        'current-bait-today-gold': [baitToday.gold, 2],
-        'current-bait-today-net': [baitToday.netGold, 2],
-        'current-bait-total-casts': [baitTotal.casts, 0],
-        'current-bait-total-gold': [baitTotal.gold, 2],
-        'current-bait-total-net': [baitTotal.netGold, 2],
-        'current-bait-total-xp': [baitTotal.xp, 2],
+        'current-bait-casts': [currentSummary.casts, 0],
+        'current-bait-fish': [currentSummary.fish, 0],
+        'current-bait-gold': [currentSummary.gold, 2],
+        'current-bait-fish-gold': [currentSummary.fishGold, 2],
+        'current-bait-bait-cost': [currentSummary.baitCost, 2],
+        'current-bait-net-gold': [currentSummary.netGold, 2],
+        'current-bait-xp': [currentSummary.xp, 2],
+        'current-bait-relics': [currentSummary.relics, 0],
+        'current-bait-chests': [currentSummary.treasureChests, 0],
+        'current-bait-gears': [currentSummary.gears, 0],
+        'current-bait-net-average': [netAverage, 1],
     };
 
     for (const [id, [number, digits]] of Object.entries(baitValues)) {
         elements[id].textContent = formatNumber(number, digits);
     }
+    renderSignedTone(elements['current-bait-net-gold'], currentSummary.netGold);
+    renderSignedTone(elements['current-bait-net-average'], netAverage);
+    const unknownCostCasts = Number(currentSummary.unknownBaitCostCasts) || 0;
+
+    elements['current-bait-cost-note'].hidden = unknownCostCasts === 0;
+    elements['current-bait-cost-note'].textContent = unknownCostCasts > 0
+        ? `${formatNumber(unknownCostCasts, 0)} 次抛竿未获取到鱼饵价格，成本和净收益暂未包含。`
+        : '';
+    renderRarityCounts(
+        elements['current-bait-rarity-list'],
+        currentSummary.rarityCounts,
+        '暂无收获',
+    );
 
     const level = Number(dashboard?.level);
     const xp = Number(dashboard?.xp);
@@ -750,49 +837,25 @@ function renderStats() {
     elements['stats-total-casts'].textContent = formatNumber(total.casts, 0);
     elements['stats-total-fish'].textContent = formatNumber(total.fish, 0);
     elements['stats-total-gold'].textContent = formatNumber(total.gold);
+    elements['stats-total-fish-gold'].textContent = formatNumber(total.fishGold);
     elements['stats-total-xp'].textContent = formatNumber(total.xp);
     elements['stats-total-bait-cost'].textContent = formatNumber(total.baitCost);
     elements['stats-total-net-gold'].textContent = formatNumber(total.netGold);
-
-    const rarityEntries = Object.entries(today.rarityCounts || {})
-        .sort(([, left], [, right]) => right - left);
-    const rarityFragment = document.createDocumentFragment();
-
-    for (const [rarity, count] of rarityEntries) {
-        const chip = document.createElement('span');
-        const label = document.createElement('span');
-        const amount = document.createElement('strong');
-        const display = rarityDisplay(rarity);
-
-        chip.className = `rarity-chip ${display.tone}`;
-        chip.title = rarity;
-        label.textContent = display.label;
-        amount.textContent = formatNumber(count, 0);
-        chip.append(label, amount);
-        rarityFragment.append(chip);
-    }
-
-    if (rarityEntries.length === 0) {
-        const empty = document.createElement('span');
-
-        empty.className = 'muted';
-        empty.textContent = '暂无数据';
-        rarityFragment.append(empty);
-    }
-    elements['rarity-list'].replaceChildren(rarityFragment);
+    renderRarityCounts(elements['rarity-list'], today.rarityCounts, '暂无数据');
 
     const dayRows = (snapshot.recentDays || []).map(day => [
             day.day,
             formatNumber(day.casts, 0),
             formatNumber(day.fish, 0),
             formatNumber(day.gold),
+            formatNumber(day.fishGold),
             formatNumber(day.baitCost),
             formatNumber(day.netGold),
             formatNumber(day.xp),
         ]);
 
     replaceTableRows(elements['daily-stats-body'], dayRows, {
-        colspan: 7,
+        colspan: 8,
         emptyMessage: '暂无每日收益数据',
     });
 
@@ -801,13 +864,14 @@ function renderStats() {
         formatNumber(summary.casts, 0),
         formatNumber(summary.fish, 0),
         formatNumber(summary.gold),
+        formatNumber(summary.fishGold),
         formatNumber(summary.baitCost),
         formatNumber(summary.netGold),
         formatNumber(summary.xp),
     ]);
 
     replaceTableRows(elements['bait-stats-body'], baitRows, {
-        colspan: 7,
+        colspan: 8,
         emptyMessage: '暂无鱼饵收益数据',
     });
 
@@ -816,28 +880,15 @@ function renderStats() {
         formatNumber(summary.casts, 0),
         formatNumber(summary.fish, 0),
         formatNumber(summary.gold),
+        formatNumber(summary.fishGold),
+        formatNumber(summary.baitCost),
         formatNumber(summary.netGold),
         formatNumber(summary.xp),
     ]);
 
     replaceTableRows(elements['biome-stats-body'], biomeRows, {
-        colspan: 6,
+        colspan: 8,
         emptyMessage: '暂无地图收益数据',
-    });
-
-    const breakdownRows = (snapshot.breakdowns || []).map(summary => [
-        summary.biomeName || `地图 ${summary.biomeId}`,
-        summary.baitName || summary.baitId,
-        formatNumber(summary.casts, 0),
-        formatNumber(summary.fish, 0),
-        formatNumber(summary.gold),
-        formatNumber(summary.netGold),
-        formatNumber(summary.xp),
-    ]);
-
-    replaceTableRows(elements['breakdown-stats-body'], breakdownRows, {
-        colspan: 7,
-        emptyMessage: '暂无地图与鱼饵组合数据',
     });
 }
 
@@ -847,12 +898,71 @@ function normalizeLogs(logs) {
         .slice(0, LOG_LIMIT);
 }
 
+function collectVerificationHistory(logs) {
+    const detections = [...logs]
+        .filter(entry =>
+            entry.phase === 'verification' &&
+            /^检测到(?:人机)?验证/.test(String(entry.message || '')),
+        )
+        .sort((left, right) =>
+            Date.parse(left.updatedAt) - Date.parse(right.updatedAt),
+        );
+    const unique = [];
+
+    for (const entry of detections) {
+        const previous = unique.at(-1);
+        const elapsed = Date.parse(entry.updatedAt) -
+            Date.parse(previous?.updatedAt);
+        const isFallbackDuplicate = previous?.target === '自动完成人机验证' &&
+            entry.target === '等待人工验证' &&
+            elapsed >= 0 &&
+            elapsed <= 60_000;
+
+        if (!isFallbackDuplicate) {
+            unique.push(entry);
+        }
+    }
+
+    return unique.slice(-5).reverse();
+}
+
+function renderVerificationHistory() {
+    const fragment = document.createDocumentFragment();
+
+    for (const entry of state.verificationHistory) {
+        const item = document.createElement('li');
+        const time = document.createElement('strong');
+        const mode = document.createElement('span');
+
+        time.textContent = formatFullDate(entry.updatedAt);
+        mode.textContent = entry.target === '等待人工验证'
+            ? '等待人工处理'
+            : '自动处理';
+        item.append(time, mode);
+        fragment.append(item);
+    }
+
+    if (state.verificationHistory.length === 0) {
+        const empty = document.createElement('li');
+
+        empty.className = 'muted';
+        empty.textContent = '暂无验证码记录';
+        fragment.append(empty);
+    }
+
+    elements['verification-history'].replaceChildren(fragment);
+}
+
 function addLog(entry) {
     if (state.logs.some(candidate => candidate.id === entry.id)) {
         return;
     }
 
     state.logs = normalizeLogs([entry, ...state.logs]);
+    state.verificationHistory = collectVerificationHistory([
+        entry,
+        ...state.verificationHistory,
+    ]);
     if (state.currentView === 'logs') {
         renderLogs();
     }
@@ -900,6 +1010,7 @@ function renderLogs() {
     elements['log-count'].textContent = level === 'all'
         ? `最新在前，仅显示最近 ${state.logs.length}/${LOG_LIMIT} 条`
         : `筛选到 ${filtered.length} 条，页面最多保留 ${LOG_LIMIT} 条`;
+    renderVerificationHistory();
 }
 
 function renderAll() {
@@ -967,7 +1078,7 @@ function connectEvents() {
 async function loadDashboard() {
     const [current, logs] = await Promise.all([
         api('/api/state'),
-        api(`/api/logs?limit=${LOG_LIMIT}`),
+        api(`/api/logs?limit=${LOG_HISTORY_FETCH_LIMIT}`),
     ]);
 
     state.status = current.status;
@@ -975,6 +1086,7 @@ async function loadDashboard() {
     state.settings = current.settings;
     state.stats = current.stats;
     state.logs = normalizeLogs(logs.logs);
+    state.verificationHistory = collectVerificationHistory(logs.logs);
     fillSettings(state.settings);
     applySetupMode();
     showApp();

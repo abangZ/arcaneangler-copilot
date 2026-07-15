@@ -194,11 +194,15 @@ try {
         assert.match(pageHtml, /data-view="logs"/);
         assert.match(pageHtml, /id="settings-view"/);
         assert.match(pageHtml, /id="current-bait-name"/);
+        assert.match(pageHtml, /id="current-bait-fish-gold"/);
+        assert.match(pageHtml, /id="current-bait-rarity-list"/);
         assert.match(pageHtml, /id="player-level"/);
         assert.match(pageHtml, /id="last-fish-name"/);
+        assert.match(pageHtml, /id="verification-history"/);
         assert.match(pageHtml, /id="bait-stats-body"/);
         assert.match(pageHtml, /id="biome-stats-body"/);
-        assert.match(pageHtml, /id="breakdown-stats-body"/);
+        assert.doesNotMatch(pageHtml, /地图 × 鱼饵明细/);
+        assert.doesNotMatch(pageHtml, /id="breakdown-stats-body"/);
         const appSource = await (await fetch(`${origin}/app.js`)).text();
         assert.match(appSource, /const LOG_LIMIT = 200/);
         assert.match(appSource, /const RARITY_DISPLAY/);
@@ -297,6 +301,15 @@ try {
         const fileMode = (await fs.stat(settingsFile)).mode & 0o777;
         assert.equal(fileMode, 0o600);
 
+        for (let index = 1; index <= 6; index += 1) {
+            await reporter.log({
+                level: 'running',
+                phase: 'verification',
+                target: '自动完成人机验证',
+                message: `检测到验证，测试记录 ${index}。`,
+            });
+        }
+
         const browser = await chromium.launch({ headless: true });
 
         try {
@@ -312,6 +325,10 @@ try {
             );
             await page.locator('#login-button').click();
             await page.locator('#app-view').waitFor({ state: 'visible' });
+            assert.equal(
+                await page.locator('#verification-history li').count(),
+                5,
+            );
             await assert.doesNotReject(() => page.waitForFunction(() =>
                 document.getElementById('stream-state')?.textContent ===
                     '已连接',
