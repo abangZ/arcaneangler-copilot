@@ -426,6 +426,33 @@ try {
         fishCaught: 19,
     });
     assert.equal(delayedTournamentTarget.biomeId, 12);
+    await page.evaluate(() => {
+        const derby = window.mapSmoke.derbies.active;
+
+        derby.start_time = new Date(Date.now() - 60_000).toISOString();
+        derby.end_time = new Date(Date.now() + 60_000).toISOString();
+        window.mapSmoke.derbies.active = null;
+        window.mapSmoke.derbies.upcoming.unshift(derby);
+    });
+    const delayedDerbyState = await session.getMapAutomationState();
+    const delayedDerbyDashboard = await session.getDashboardSnapshot();
+    const delayedDerbyTarget = feature.selectTarget(
+        { mode: 'auto', prioritizeTournament: false },
+        delayedDerbyState,
+    );
+
+    assert.equal(delayedDerbyState.activeDerby.id, 8);
+    assert.equal(delayedDerbyState.activeDerby.isRegistered, true);
+    assert.equal(delayedDerbyDashboard.derby.status, 'active');
+    assert.deepEqual(delayedDerbyDashboard.derby.standing, {
+        rank: 2,
+        points: 12_340,
+    });
+    assert.equal(delayedDerbyTarget.biomeId, 3);
+    await page.evaluate(() => {
+        window.mapSmoke.derbies.active =
+            window.mapSmoke.derbies.upcoming.shift();
+    });
     assert.equal(
         dashboard.competitions.filter(item =>
             item.type === 'guild-tournament',

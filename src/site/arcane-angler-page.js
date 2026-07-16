@@ -728,6 +728,7 @@ export class ArcaneAnglerPage {
             const baitPrice = Number(bait?.price);
             const baitQuantity = Number(player?.baitInventory?.[baitId]);
             const activeDerby = derbyResponse?.active;
+            const now = Date.now();
             const registeredUpcomingDerbies = (Array.isArray(
                 derbyResponse?.upcoming,
             )
@@ -743,12 +744,25 @@ export class ArcaneAnglerPage {
                         (Number.isFinite(rightStart) ? rightStart : Infinity)
                     );
                 });
+            const activeUpcomingDerby = registeredUpcomingDerbies.find(
+                derby => {
+                    const startAt = Date.parse(derby?.start_time);
+                    const endAt = Date.parse(derby?.end_time);
+
+                    return Number.isFinite(startAt) &&
+                        Number.isFinite(endAt) &&
+                        startAt <= now &&
+                        now < endAt;
+                },
+            );
             const upcomingDerby = registeredUpcomingDerbies[0];
             const selectedDerby = activeDerby?.is_registered
                 ? { ...activeDerby, status: 'active' }
-                : upcomingDerby
-                    ? { ...upcomingDerby, status: 'upcoming' }
-                    : null;
+                : activeUpcomingDerby
+                    ? { ...activeUpcomingDerby, status: 'active' }
+                    : upcomingDerby
+                        ? { ...upcomingDerby, status: 'upcoming' }
+                        : null;
             const participatingTournaments = tournamentCandidates
                 .filter(tournament => participatingTournamentIds.has(
                     String(tournament?.id),
@@ -756,7 +770,6 @@ export class ArcaneAnglerPage {
             const activeTournamentId = String(
                 tournamentResponse?.active?.id ?? '',
             );
-            const now = Date.now();
             const isTournamentActive = tournament => {
                 const startAt = Date.parse(tournament?.start_time);
                 const endAt = Date.parse(tournament?.end_time);
@@ -1798,6 +1811,15 @@ export class ArcaneAnglerPage {
                 tournamentResponse?.active?.id ?? '',
             );
             const now = Date.now();
+            const activeDerby = active || registeredDerbies.find(derby => {
+                const startAt = Date.parse(derby?.start_time);
+                const endAt = Date.parse(derby?.end_time);
+
+                return Number.isFinite(startAt) &&
+                    Number.isFinite(endAt) &&
+                    startAt <= now &&
+                    now < endAt;
+            }) || null;
             const activeTournament = participatingTournaments.find(
                 tournament => String(tournament?.id) === activeTournamentId,
             ) || participatingTournaments.find(tournament => {
@@ -1834,14 +1856,14 @@ export class ArcaneAnglerPage {
                     ]),
                 ),
                 biomes,
-                activeDerby: active
+                activeDerby: activeDerby
                     ? {
-                        id: Number(active.id),
-                        number: Number(active.derby_number) || null,
-                        biomeId: Number(active.biome_id),
-                        isRegistered: Boolean(active.is_registered),
-                        startAt: String(active.start_time || '') || null,
-                        endAt: String(active.end_time || '') || null,
+                        id: Number(activeDerby.id),
+                        number: Number(activeDerby.derby_number) || null,
+                        biomeId: Number(activeDerby.biome_id),
+                        isRegistered: Boolean(activeDerby.is_registered),
+                        startAt: String(activeDerby.start_time || '') || null,
+                        endAt: String(activeDerby.end_time || '') || null,
                     }
                     : null,
                 activeTournament: activeTournament
