@@ -36,6 +36,109 @@ function normalizedFiniteNumber(value) {
     return Number.isFinite(number) ? number : null;
 }
 
+function normalizedGearId(value) {
+    const id = String(value ?? '').trim();
+
+    return id && id.length <= 128 ? id : null;
+}
+
+function normalizedGearSlot(value) {
+    const slot = String(value ?? '').trim().toLowerCase();
+
+    return /^[a-z0-9_-]{1,32}$/.test(slot) ? slot : 'unknown';
+}
+
+function normalizedGearNumber(value, { integer = false } = {}) {
+    const number = Number(value);
+
+    if (!Number.isFinite(number)) {
+        return 0;
+    }
+
+    return integer ? Math.max(0, Math.floor(number)) : number;
+}
+
+function normalizedGearFlag(value) {
+    return value === true || value === 1 || value === '1';
+}
+
+function normalizeGearRecord(source) {
+    const id = normalizedGearId(source?.id);
+
+    if (!id) {
+        return null;
+    }
+
+    const stats = {
+        strength: normalizedGearNumber(
+            source.strStat ?? source.str_stat,
+        ),
+        intelligence: normalizedGearNumber(
+            source.intStat ?? source.int_stat,
+        ),
+        luck: normalizedGearNumber(
+            source.lukStat ?? source.luk_stat,
+        ),
+        stamina: normalizedGearNumber(
+            source.staStat ?? source.sta_stat,
+        ),
+    };
+    const name = String(source.name || '').trim();
+    const rarity = String(source.rarity || '').trim();
+
+    return {
+        id,
+        name: name.slice(0, 200) || `装备 ${id}`,
+        slot: normalizedGearSlot(source.slot),
+        rarity: rarity.slice(0, 40) || 'Unknown',
+        quality: normalizedGearNumber(source.quality, { integer: true }),
+        upgradeLevel: normalizedGearNumber(
+            source.upgradeLevel ?? source.upgrade_level,
+            { integer: true },
+        ),
+        stats,
+        totalStats: Object.values(stats).reduce(
+            (total, value) => total + value,
+            0,
+        ),
+        sellValue: Math.max(0, normalizedGearNumber(
+            source.sellValue ?? source.sell_value,
+        )),
+        isEquipped: normalizedGearFlag(
+            source.isEquipped ?? source.is_equipped,
+        ),
+        isLocked: normalizedGearFlag(source.isLocked ?? source.is_locked),
+    };
+}
+
+export function normalizeGearInventoryResponse(response) {
+    const gears = (Array.isArray(response?.gears) ? response.gears : [])
+        .map(normalizeGearRecord)
+        .filter(Boolean);
+    const equippedStats = gears
+        .filter(gear => gear.isEquipped)
+        .reduce((totals, gear) => ({
+            strength: totals.strength + gear.stats.strength,
+            intelligence: totals.intelligence + gear.stats.intelligence,
+            luck: totals.luck + gear.stats.luck,
+            stamina: totals.stamina + gear.stats.stamina,
+        }), {
+            strength: 0,
+            intelligence: 0,
+            luck: 0,
+            stamina: 0,
+        });
+    const equippedCount = gears.filter(gear => gear.isEquipped).length;
+
+    return {
+        gears,
+        equippedStats,
+        equippedCount,
+        backpackCount: gears.length - equippedCount,
+        observedAt: new Date().toISOString(),
+    };
+}
+
 function normalizeWorldBossResponse(response, playerUserId = null) {
     const event = response?.event || null;
     const anomaly = event?.anomaly || null;
@@ -376,6 +479,134 @@ export class ArcaneAnglerPage {
                     : null,
             };
         }, { currentBiome: biomeId, equippedBait: baitId });
+    }
+
+    async getGearInventory() {
+        const response = await this.page.evaluate(async () => {
+            const api = window.ApiService;
+
+            if (typeof api?.getGears !== 'function') {
+                throw new Error('页面未提供装备列表接口。');
+            }
+
+            return api.getGears();
+        });
+
+        return normalizeGearInventoryResponse(response);
+    }
+
+    async equipGearThroughApi(gearId, targetSlot = null) {
+        const action = await this.page.evaluate(async input => {
+            const api = window.ApiService;
+
+            if (
+                typeof api?.getGears !== 'function' ||
+                typeof api?.equipGear !== 'function'
+            ) {
+                throw new Error('页面未提供装备穿戴接口。');
+            }
+
+            const response = await api.getGears();
+            const gears = Array.isArray(response?.gears)
+                ? response.gears
+                : [];
+            const gear = gears.find(candidate =>
+                String(candidate?.id) === input.gearId,
+            );
+
+            if (!gear) {
+                throw new Error('目标装备已不在背包中，请刷新后重试。');
+            }
+
+            if (
+                gear.isEquipped === true ||
+                gear.isEquipped === 1 ||
+                gear.is_equipped === true ||
+                gear.is_equipped === 1
+            ) {
+                return {
+                    changed: false,
+                    gearName: String(gear.name || input.gearId),
+                };
+            }
+
+            const slot = String(gear.slot || '').toLowerCase();
+            const isRing = ['ring', 'ring_1', 'ring_2'].includes(slot);
+
+            if (isRing && !['ring_1', 'ring_2'].includes(input.targetSlot)) {
+                throw new Error('戒指需要选择戒指槽位 1 或 2。');
+            }
+
+            await api.equipGear(
+                gear.id,
+                true,
+                isRing ? input.targetSlot : null,
+            );
+            return {
+                changed: true,
+                gearName: String(gear.name || input.gearId),
+            };
+        }, {
+            gearId: String(gearId),
+            targetSlot,
+        });
+        const snapshot = await this.getGearInventory();
+
+        return { ...snapshot, action };
+    }
+
+    async sellGearsThroughApi(gearIds) {
+        const sale = await this.page.evaluate(async requestedIds => {
+            const api = window.ApiService;
+
+            if (
+                typeof api?.getGears !== 'function' ||
+                typeof api?.sellGears !== 'function'
+            ) {
+                throw new Error('页面未提供装备出售接口。');
+            }
+
+            const response = await api.getGears();
+            const gears = Array.isArray(response?.gears)
+                ? response.gears
+                : [];
+            const requested = new Set(requestedIds);
+            const selected = gears.filter(gear =>
+                requested.has(String(gear?.id)),
+            );
+
+            if (selected.length !== requested.size) {
+                throw new Error('部分装备已不在背包中，请刷新后重新选择。');
+            }
+
+            if (selected.some(gear =>
+                gear.isEquipped === true ||
+                gear.isEquipped === 1 ||
+                gear.is_equipped === true ||
+                gear.is_equipped === 1
+            )) {
+                throw new Error('已穿戴的装备不能出售。');
+            }
+
+            if (selected.some(gear =>
+                gear.isLocked === true ||
+                gear.isLocked === 1 ||
+                gear.is_locked === true ||
+                gear.is_locked === 1
+            )) {
+                throw new Error('已锁定的装备不能出售。');
+            }
+
+            const result = await api.sellGears(selected.map(gear => gear.id));
+
+            return {
+                gearsSold: Number(result?.gearsSold) || selected.length,
+                goldEarned: Number(result?.goldEarned) || 0,
+            };
+        }, gearIds.map(String));
+        const snapshot = await this.getGearInventory();
+
+        return { ...snapshot, sale };
     }
 
     async getCurrentWorldBossResponse({ optional = false } = {}) {

@@ -169,6 +169,66 @@ h2 { margin-bottom: 16px; font-size: 15px; }
 .rarity-chip.treasure { color: #fbd06d; border-color: rgba(251, 208, 109, 0.23); background: rgba(202, 138, 4, 0.09); }
 .rarity-chip.gear { color: #f1f5f9; border-color: rgba(241, 245, 249, 0.2); background: rgba(100, 116, 139, 0.11); }
 .rarity-chip.unknown { color: var(--muted); }
+
+.gear-equipped-panel, .gear-backpack-panel { padding: 18px; }
+.gear-equipped-panel { margin-bottom: 12px; }
+.gear-equipped-panel .section-heading-row h2 { margin-bottom: 0; }
+.gear-stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 17px 0; }
+.gear-stat-grid > div { display: grid; gap: 7px; padding: 10px 12px; border-radius: 9px; background: var(--panel-soft); }
+.gear-stat-grid dt { color: var(--muted); font-size: 10px; }
+.gear-stat-grid dd { margin: 0; color: var(--accent); font-size: 17px; font-weight: 800; }
+.gear-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.gear-card { min-width: 0; padding: 13px; border: 1px solid rgba(148, 163, 184, 0.16); border-left-width: 3px; border-radius: 10px; background: var(--panel-soft); }
+.gear-card.rarity-common { border-left-color: #cbd5e1; }
+.gear-card.rarity-uncommon { border-left-color: #67e8a5; }
+.gear-card.rarity-fine { border-left-color: #67e8f9; }
+.gear-card.rarity-rare { border-left-color: #7db5ff; }
+.gear-card.rarity-epic { border-left-color: #a5a7ff; }
+.gear-card.rarity-legendary { border-left-color: #ffb15e; }
+.gear-card.rarity-mythic { border-left-color: #d29aff; }
+.gear-card.rarity-exotic { border-left-color: #ff93cf; }
+.gear-card.rarity-arcane { border-left-color: #ffe06b; }
+.gear-card.locked { opacity: 0.72; }
+.gear-card-header { min-height: 38px; display: flex; align-items: flex-start; gap: 9px; }
+.gear-card-title { min-width: 0; display: grid; gap: 3px; }
+.gear-name { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.gear-rarity { font-size: 10px; }
+.gear-rarity.common { color: #cbd5e1; }
+.gear-rarity.uncommon { color: #67e8a5; }
+.gear-rarity.fine { color: #67e8f9; }
+.gear-rarity.rare { color: #7db5ff; }
+.gear-rarity.epic { color: #a5a7ff; }
+.gear-rarity.legendary { color: #ffb15e; }
+.gear-rarity.mythic { color: #d29aff; }
+.gear-rarity.exotic { color: #ff93cf; }
+.gear-rarity.arcane { color: #ffe06b; }
+.gear-meta { margin: 8px 0; color: var(--muted); font-size: 10px; }
+.gear-card-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; margin: 0 0 11px; }
+.gear-card-stats > div { display: grid; gap: 2px; padding: 6px; border-radius: 6px; background: rgba(148, 163, 184, 0.06); }
+.gear-card-stats dt { color: var(--muted); font-size: 9px; }
+.gear-card-stats dd { margin: 0; font-size: 11px; font-weight: 750; }
+.gear-card-footer { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.gear-sell-value { color: var(--warning); font-size: 9px; }
+.gear-equipped-mark { color: var(--accent); font-size: 10px; font-weight: 750; }
+.gear-locked-mark { color: var(--warning); font-size: 10px; font-weight: 750; }
+.gear-equip-actions { display: flex; justify-content: flex-end; gap: 5px; }
+.gear-equip-actions .button { min-height: 29px; padding: 4px 7px; font-size: 9px; }
+.gear-card.empty-slot { min-height: 153px; display: grid; place-items: center; align-content: center; gap: 7px; border-left-width: 1px; color: #b7c0cc; }
+.gear-empty-icon { font-size: 23px; filter: grayscale(0.6); opacity: 0.65; }
+.gear-card.empty-slot .muted { font-size: 10px; }
+.gear-backpack-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 15px; }
+.gear-backpack-heading h2 { margin: 3px 0 0; }
+.gear-selection-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px; }
+.gear-selection-actions .muted { margin-right: 3px; font-size: 10px; }
+.gear-filters { display: grid; grid-template-columns: minmax(180px, 1.5fr) repeat(3, minmax(125px, 1fr)); gap: 9px; margin-bottom: 14px; padding: 11px; border-radius: 9px; background: var(--panel-soft); }
+.gear-filters label { gap: 5px; font-size: 10px; }
+.gear-filters input, .gear-filters select { min-height: 33px; font-size: 11px; }
+.gear-empty-state { grid-column: 1 / -1; }
+.gear-pagination { display: flex; align-items: center; justify-content: center; gap: 11px; margin-top: 14px; }
+.gear-pagination .muted { min-width: 85px; text-align: center; font-size: 10px; }
+input[type="checkbox"].gear-checkbox { position: static; width: 17px; min-height: 17px; height: 17px; flex: 0 0 auto; margin: 1px 0 0; padding: 0; appearance: auto; border-radius: 4px; accent-color: var(--accent-strong); }
+input[type="checkbox"].gear-checkbox::after { display: none; }
+
 .history-card { padding: 18px; margin-bottom: 12px; }
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -220,6 +280,8 @@ summary { padding: 14px 15px; cursor: pointer; font-size: 13px; font-weight: 700
     .topbar-actions { justify-self: end; }
     .kpi-grid, .stats-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .log-context-grid { grid-template-columns: 1fr; }
+    .gear-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .gear-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 600px) {
@@ -231,6 +293,9 @@ summary { padding: 14px 15px; cursor: pointer; font-size: 13px; font-weight: 700
     .control-actions { width: 100%; }
     .control-actions .button { flex: 1; }
     .overview-grid, .stats-layout, .form-grid { grid-template-columns: 1fr; }
+    .gear-stat-grid, .gear-grid, .gear-filters { grid-template-columns: 1fr; }
+    .gear-backpack-heading { align-items: stretch; flex-direction: column; }
+    .gear-selection-actions { justify-content: flex-start; }
     .detail-list.compact { grid-template-columns: 1fr; }
     .progress-meta { align-items: flex-start; flex-direction: column; gap: 5px; }
     .settings-form, .login-card { padding: 17px; }

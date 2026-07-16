@@ -16,6 +16,9 @@ import { SettingsStore } from '../src/core/settings-store.js';
 import { StatsStore } from '../src/core/stats-store.js';
 import { StatusReporter } from '../src/core/status-reporter.js';
 import { WorkerController } from '../src/core/worker-controller.js';
+import {
+    normalizeGearInventoryResponse,
+} from '../src/site/arcane-angler-page.js';
 import { AuthService } from '../src/web/auth-service.js';
 import { ControlServer } from '../src/web/control-server.js';
 
@@ -25,12 +28,130 @@ const tempDirectory = await fs.mkdtemp(
 const events = [];
 let workerNumber = 0;
 
+function createGearSnapshot(gears, extra = {}) {
+    const equippedStats = gears
+        .filter(gear => gear.isEquipped)
+        .reduce((totals, gear) => ({
+            strength: totals.strength + gear.stats.strength,
+            intelligence: totals.intelligence + gear.stats.intelligence,
+            luck: totals.luck + gear.stats.luck,
+            stamina: totals.stamina + gear.stats.stamina,
+        }), {
+            strength: 0,
+            intelligence: 0,
+            luck: 0,
+            stamina: 0,
+        });
+    const equippedCount = gears.filter(gear => gear.isEquipped).length;
+
+    return {
+        gears: structuredClone(gears),
+        equippedStats,
+        equippedCount,
+        backpackCount: gears.length - equippedCount,
+        observedAt: new Date().toISOString(),
+        ...extra,
+    };
+}
+
 function createFakeWorker() {
     const id = ++workerNumber;
     let resolveCompletion;
     const completionPromise = new Promise(resolve => {
         resolveCompletion = resolve;
     });
+    let gears = [
+        {
+            id: 'gear-head',
+            name: 'Riverwatch Hood',
+            slot: 'head',
+            rarity: 'Rare',
+            quality: 64,
+            upgradeLevel: 2,
+            stats: {
+                strength: 11,
+                intelligence: 8,
+                luck: 0,
+                stamina: 5,
+            },
+            totalStats: 24,
+            sellValue: 1_250,
+            isEquipped: true,
+            isLocked: false,
+        },
+        {
+            id: 'gear-boots',
+            name: 'Crystalfang Walkers',
+            slot: 'boots',
+            rarity: 'Exotic',
+            quality: 92,
+            upgradeLevel: 0,
+            stats: {
+                strength: 13,
+                intelligence: 14,
+                luck: 0,
+                stamina: 15,
+            },
+            totalStats: 42,
+            sellValue: 8_000,
+            isEquipped: false,
+            isLocked: false,
+        },
+        {
+            id: 'gear-ring',
+            name: 'Moonwake Band',
+            slot: 'ring',
+            rarity: 'Epic',
+            quality: 78,
+            upgradeLevel: 1,
+            stats: {
+                strength: 0,
+                intelligence: 7,
+                luck: 12,
+                stamina: 0,
+            },
+            totalStats: 19,
+            sellValue: 2_800,
+            isEquipped: false,
+            isLocked: false,
+        },
+        {
+            id: 'gear-torso',
+            name: 'Driftweave Vest',
+            slot: 'torso',
+            rarity: 'Common',
+            quality: 24,
+            upgradeLevel: 0,
+            stats: {
+                strength: 2,
+                intelligence: 0,
+                luck: 0,
+                stamina: 3,
+            },
+            totalStats: 5,
+            sellValue: 300,
+            isEquipped: false,
+            isLocked: false,
+        },
+        {
+            id: 'gear-locked',
+            name: 'Locked Charm',
+            slot: 'charm',
+            rarity: 'Legendary',
+            quality: 83,
+            upgradeLevel: 0,
+            stats: {
+                strength: 0,
+                intelligence: 4,
+                luck: 17,
+                stamina: 0,
+            },
+            totalStats: 21,
+            sellValue: 4_500,
+            isEquipped: false,
+            isLocked: true,
+        },
+    ];
 
     return {
         start: async () => events.push(`start:${id}`),
@@ -103,6 +224,51 @@ function createFakeWorker() {
                 },
             },
         }),
+        getGearInventory: async () => createGearSnapshot(gears),
+        equipGear: async ({ gearId, targetSlot }) => {
+            const target = gears.find(gear => gear.id === gearId);
+
+            assert.ok(target);
+            const slot = ['ring', 'ring_1', 'ring_2'].includes(target.slot)
+                ? targetSlot
+                : target.slot;
+
+            for (const gear of gears) {
+                const sameSlot = gear.slot === slot ||
+                    (
+                        ['ring_1', 'ring_2'].includes(slot) &&
+                        gear.isEquipped && gear.slot === slot
+                    );
+
+                if (sameSlot) {
+                    gear.isEquipped = false;
+                    if (['ring_1', 'ring_2'].includes(gear.slot)) {
+                        gear.slot = 'ring';
+                    }
+                }
+            }
+            target.slot = slot;
+            target.isEquipped = true;
+            return createGearSnapshot(gears, {
+                action: { changed: true, gearName: target.name },
+            });
+        },
+        sellGears: async gearIds => {
+            const selected = gears.filter(gear => gearIds.includes(gear.id));
+
+            assert.ok(selected.every(gear =>
+                !gear.isEquipped && !gear.isLocked,
+            ));
+            const goldEarned = selected.reduce(
+                (total, gear) => total + gear.sellValue,
+                0,
+            );
+
+            gears = gears.filter(gear => !gearIds.includes(gear.id));
+            return createGearSnapshot(gears, {
+                sale: { gearsSold: selected.length, goldEarned },
+            });
+        },
     };
 }
 
@@ -167,6 +333,33 @@ async function login(origin, username, password) {
 }
 
 try {
+    const normalizedGears = normalizeGearInventoryResponse({
+        gears: [
+            {
+                id: 17,
+                name: 'Test Ring',
+                slot: 'ring_1',
+                rarity: 'Epic',
+                quality: 81,
+                upgrade_level: 2,
+                str_stat: 4,
+                intStat: 7,
+                luk_stat: 9,
+                staStat: 3,
+                sell_value: 1_500,
+                is_equipped: true,
+                is_locked: false,
+                owner: 'must-not-leak',
+            },
+        ],
+    });
+
+    assert.equal(normalizedGears.gears[0].id, '17');
+    assert.equal(normalizedGears.gears[0].stats.luck, 9);
+    assert.equal(normalizedGears.gears[0].totalStats, 23);
+    assert.equal(normalizedGears.equippedStats.intelligence, 7);
+    assert.equal('owner' in normalizedGears.gears[0], false);
+
     const settingsFile = path.join(tempDirectory, 'settings.json');
     const settingsStore = new SettingsStore({ filePath: settingsFile });
     const logStore = new LogStore({
@@ -262,6 +455,7 @@ try {
         assert.match(pageHtml, /id="login-view" class="login-layout" hidden/);
         assert.match(pageHtml, /data-view="overview"/);
         assert.match(pageHtml, /data-view="stats"/);
+        assert.match(pageHtml, /data-view="gear"/);
         assert.match(pageHtml, /data-view="logs"/);
         assert.match(pageHtml, /id="settings-view"/);
         assert.match(pageHtml, /id="prioritize-tournament"/);
@@ -284,6 +478,9 @@ try {
         assert.match(pageHtml, /id="verification-history"/);
         assert.match(pageHtml, /id="bait-stats-body"/);
         assert.match(pageHtml, /id="biome-stats-body"/);
+        assert.match(pageHtml, /id="gear-equipped-grid"/);
+        assert.match(pageHtml, /id="gear-backpack-grid"/);
+        assert.match(pageHtml, /id="gear-sell-selected"/);
         assert.doesNotMatch(pageHtml, /地图 × 鱼饵明细/);
         assert.doesNotMatch(pageHtml, /id="breakdown-stats-body"/);
         const appSource = await (await fetch(`${origin}/app.js`)).text();
@@ -292,6 +489,9 @@ try {
         assert.match(appSource, /function estimateLevelUp/);
         assert.match(appSource, /const DERBY_TYPE_LABELS/);
         assert.match(appSource, /const WORLD_BOSS_STAT_LABELS/);
+        assert.match(appSource, /function renderGear/);
+        assert.match(appSource, /\/api\/gears\/equip/);
+        assert.match(appSource, /\/api\/gears\/sell/);
         assert.match(appSource, /competition: '比赛'/);
         assert.match(appSource, /保存并进入控制台/);
 
@@ -379,6 +579,11 @@ try {
             headers: originHeaders(origin, cookie),
         });
         assert.equal(result.body.configured, false);
+
+        result = await requestJson(origin, '/api/gears', {
+            headers: originHeaders(origin, cookie),
+        });
+        assert.equal(result.response.status, 409);
 
         result = await requestJson(origin, '/api/actions/start', {
             method: 'POST',
@@ -534,6 +739,86 @@ try {
                 '#2 · 12,340 分',
             );
 
+            const gearResponse = page.waitForResponse(response =>
+                new URL(response.url()).pathname === '/api/gears' &&
+                response.request().method() === 'GET',
+            );
+
+            await page.locator('[data-view="gear"]').click();
+            assert.equal((await gearResponse).status(), 200);
+            await page.locator('#gear-content').waitFor({ state: 'visible' });
+            assert.equal(
+                await page.locator('#gear-equipped-count').textContent(),
+                '1',
+            );
+            assert.equal(
+                await page.locator('#gear-total-strength').textContent(),
+                '+11',
+            );
+            assert.equal(
+                await page.locator('#gear-equipped-grid .gear-card').count(),
+                9,
+            );
+            assert.equal(
+                await page.locator('#gear-backpack-grid .gear-card').count(),
+                4,
+            );
+            assert.equal(
+                await page.locator(
+                    '[data-gear-id="gear-locked"] [data-gear-select]',
+                ).isDisabled(),
+                true,
+            );
+            const equipResponse = page.waitForResponse(response =>
+                new URL(response.url()).pathname === '/api/gears/equip',
+            );
+
+            await page.locator(
+                '[data-gear-id="gear-ring"] [data-target-slot="ring_1"]',
+            ).click();
+            assert.equal((await equipResponse).status(), 200);
+            await page.waitForFunction(() =>
+                document.getElementById('gear-equipped-count')?.textContent ===
+                    '2',
+            );
+            assert.equal(
+                await page.locator('#gear-total-intelligence').textContent(),
+                '+15',
+            );
+            assert.equal(
+                await page.locator('#gear-total-luck').textContent(),
+                '+12',
+            );
+
+            await page.locator(
+                '[data-gear-id="gear-boots"] [data-gear-select]',
+            ).check();
+            await page.locator(
+                '[data-gear-id="gear-torso"] [data-gear-select]',
+            ).check();
+            assert.equal(
+                await page.locator('#gear-selected-count').textContent(),
+                '已选择 2 件',
+            );
+
+            page.once('dialog', dialog => dialog.accept());
+            const sellResponse = page.waitForResponse(response =>
+                new URL(response.url()).pathname === '/api/gears/sell',
+            );
+
+            await page.locator('#gear-sell-selected').click();
+            assert.equal((await sellResponse).status(), 200);
+            await page.waitForFunction(() =>
+                !document.querySelector('[data-gear-id="gear-boots"]') &&
+                !document.querySelector('[data-gear-id="gear-torso"]'),
+            );
+            assert.equal(
+                await page.locator('#gear-selected-count').textContent(),
+                '已选择 0 件',
+            );
+
+            await page.locator('[data-view="overview"]').click();
+
             const stopResponse = page.waitForResponse(response =>
                 new URL(response.url()).pathname === '/api/actions/stop',
             );
@@ -554,6 +839,46 @@ try {
             body: '{}',
         });
         assert.equal(result.body.controller.mode, 'running');
+
+        result = await requestJson(origin, '/api/gears', {
+            headers: originHeaders(origin, cookie),
+        });
+        assert.equal(result.response.status, 200);
+        assert.equal(result.body.gears.length, 5);
+        assert.equal(result.body.equippedStats.strength, 11);
+
+        result = await requestJson(origin, '/api/gears/equip', {
+            method: 'POST',
+            headers: {
+                ...originHeaders(origin, cookie, csrfToken),
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                gearId: 'gear-ring',
+                targetSlot: 'ring_3',
+            }),
+        });
+        assert.equal(result.response.status, 409);
+
+        result = await requestJson(origin, '/api/gears/sell', {
+            method: 'POST',
+            headers: {
+                ...originHeaders(origin, cookie, csrfToken),
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ gearIds: [] }),
+        });
+        assert.equal(result.response.status, 409);
+
+        result = await requestJson(origin, '/api/gears/sell', {
+            method: 'POST',
+            headers: {
+                ...originHeaders(origin, cookie, 'wrong-token'),
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ gearIds: ['gear-boots'] }),
+        });
+        assert.equal(result.response.status, 403);
 
         const restartedSettings = structuredClone(configuredSettings);
         restartedSettings.browser.headless = false;
@@ -729,5 +1054,5 @@ try {
 }
 
 console.log(
-    'Web smoke passed: auth, settings, stats, SSE and Worker controls work.',
+    'Web smoke passed: auth, settings, stats, gears, SSE and Worker controls work.',
 );

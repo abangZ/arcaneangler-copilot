@@ -18,6 +18,34 @@ class WorkerStateError extends Error {
     }
 }
 
+function requireGearId(value) {
+    const id = String(value ?? '').trim();
+
+    if (!id || id.length > 128) {
+        throw new WorkerStateError('装备 ID 无效，请刷新装备列表后重试。');
+    }
+
+    return id;
+}
+
+function requireGearIds(value) {
+    if (!Array.isArray(value) || value.length === 0) {
+        throw new WorkerStateError('请至少选择一件要出售的装备。');
+    }
+
+    if (value.length > 500) {
+        throw new WorkerStateError('单次最多批量出售 500 件装备。');
+    }
+
+    const ids = value.map(requireGearId);
+
+    if (new Set(ids).size !== ids.length) {
+        throw new WorkerStateError('出售列表中包含重复装备。');
+    }
+
+    return ids;
+}
+
 export class WorkerController {
     constructor({ settingsStore, reporter, createWorker, now = () => new Date() }) {
         this.settingsStore = settingsStore;
@@ -234,6 +262,74 @@ export class WorkerController {
                 message: '正在重启 Playwright Worker。',
             });
             return this.startUnlocked();
+        });
+    }
+
+    requireGearWorker() {
+        if (this.value.mode !== WORKER_MODES.RUNNING || !this.worker) {
+            throw new WorkerStateError(
+                '请先启动自动化，再使用装备管理。',
+            );
+        }
+
+        const workerState = this.worker.getState();
+
+        if (
+            !workerState.browserOpen ||
+            workerState.browserSuspended ||
+            workerState.pageReady === false
+        ) {
+            throw new WorkerStateError(
+                'Playwright 浏览器当前已关闭，请等待调度恢复后再管理装备。',
+            );
+        }
+
+        return this.worker;
+    }
+
+    async getGearInventory() {
+        return this.enqueue(() =>
+            this.requireGearWorker().getGearInventory());
+    }
+
+    async equipGear({ gearId, targetSlot = null } = {}) {
+        const normalizedGearId = requireGearId(gearId);
+        const normalizedTargetSlot = targetSlot == null || targetSlot === ''
+            ? null
+            : String(targetSlot);
+
+        if (
+            normalizedTargetSlot &&
+            !['ring_1', 'ring_2'].includes(normalizedTargetSlot)
+        ) {
+            throw new WorkerStateError('戒指槽位只能是 ring_1 或 ring_2。');
+        }
+
+        return this.enqueue(async () => {
+            try {
+                return await this.requireGearWorker().equipGear({
+                    gearId: normalizedGearId,
+                    targetSlot: normalizedTargetSlot,
+                });
+            } catch (error) {
+                error.statusCode ||= 409;
+                throw error;
+            }
+        });
+    }
+
+    async sellGears(gearIds) {
+        const normalizedGearIds = requireGearIds(gearIds);
+
+        return this.enqueue(async () => {
+            try {
+                return await this.requireGearWorker().sellGears(
+                    normalizedGearIds,
+                );
+            } catch (error) {
+                error.statusCode ||= 409;
+                throw error;
+            }
         });
     }
 

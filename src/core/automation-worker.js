@@ -395,6 +395,53 @@ export class AutomationWorker {
         this.runPromise = this.engine.start();
     }
 
+    assertGearManagementAvailable() {
+        if (!this.context || !this.session || this.session.isClosed()) {
+            const error = new Error(
+                'Playwright 浏览器当前未打开，暂时无法管理装备。',
+            );
+
+            error.statusCode = 409;
+            throw error;
+        }
+    }
+
+    async getGearInventory() {
+        this.assertGearManagementAvailable();
+        return this.session.getGearInventory();
+    }
+
+    async equipGear({ gearId, targetSlot = null }) {
+        this.assertGearManagementAvailable();
+        const snapshot = await this.session.equipGearThroughApi(
+            gearId,
+            targetSlot,
+        );
+
+        await this.reporter.log({
+            level: 'running',
+            phase: 'gear',
+            target: '穿戴装备',
+            message: snapshot.action.changed
+                ? `已穿戴 ${snapshot.action.gearName}。`
+                : `${snapshot.action.gearName} 已经处于穿戴状态。`,
+        });
+        return snapshot;
+    }
+
+    async sellGears(gearIds) {
+        this.assertGearManagementAvailable();
+        const snapshot = await this.session.sellGearsThroughApi(gearIds);
+
+        await this.reporter.log({
+            level: 'running',
+            phase: 'gear',
+            target: '批量出售装备',
+            message: `已出售 ${snapshot.sale.gearsSold} 件装备，获得 ${snapshot.sale.goldEarned.toLocaleString()} 金币。`,
+        });
+        return snapshot;
+    }
+
     completion() {
         return this.runPromise || Promise.resolve();
     }

@@ -410,6 +410,32 @@ export class ControlServer {
             return;
         }
 
+        if (request.method === 'GET' && pathname === '/api/gears') {
+            this.requireSession(request);
+            const snapshot = await this.controller.getGearInventory();
+
+            json(response, 200, snapshot);
+            return;
+        }
+
+        if (request.method === 'POST' && pathname === '/api/gears/equip') {
+            this.requireMutationSession(request);
+            const body = await readJson(request);
+            const snapshot = await this.controller.equipGear(body);
+
+            json(response, 200, snapshot);
+            return;
+        }
+
+        if (request.method === 'POST' && pathname === '/api/gears/sell') {
+            this.requireMutationSession(request);
+            const body = await readJson(request);
+            const snapshot = await this.controller.sellGears(body.gearIds);
+
+            json(response, 200, snapshot);
+            return;
+        }
+
         if (request.method === 'PUT' && pathname === '/api/settings') {
             this.requireMutationSession(request);
             const body = await readJson(request);

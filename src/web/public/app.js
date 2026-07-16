@@ -6,7 +6,7 @@ const elementIds = [
     'login-password',
     'login-button', 'login-error', 'app-view', 'main-nav', 'session-user',
     'stream-state', 'transport-warning', 'settings-button', 'logout-button',
-    'overview-view', 'stats-view', 'logs-view', 'settings-view',
+    'overview-view', 'stats-view', 'gear-view', 'logs-view', 'settings-view',
     'worker-mode', 'status-dot', 'status-message',
     'start-button', 'pause-button', 'resume-button', 'stop-button',
     'today-casts', 'today-gold', 'today-xp', 'today-fish',
@@ -46,6 +46,14 @@ const elementIds = [
     'rarity-list', 'daily-stats-body', 'bait-stats-body',
     'biome-stats-body', 'log-count', 'verification-history', 'log-level',
     'log-list', 'settings-title', 'settings-subtitle',
+    'gear-status', 'gear-refresh', 'gear-error', 'gear-content',
+    'gear-equipped-count', 'gear-observed-at', 'gear-total-strength',
+    'gear-total-intelligence', 'gear-total-luck', 'gear-total-stamina',
+    'gear-equipped-grid', 'gear-backpack-meta', 'gear-selected-count',
+    'gear-select-page', 'gear-clear-selection', 'gear-sell-selected',
+    'gear-search', 'gear-slot-filter', 'gear-rarity-filter', 'gear-sort',
+    'gear-backpack-grid', 'gear-page-prev', 'gear-page-label',
+    'gear-page-next',
     'settings-back', 'load-error-warning', 'settings-form',
     'settings-revision', 'settings-note', 'save-settings', 'character',
     'headless', 'fishing-enabled', 'world-boss-enabled', 'classic-mode',
@@ -78,6 +86,12 @@ const state = {
     settingsDirty: false,
     savingSettings: false,
     busy: false,
+    gear: null,
+    gearError: null,
+    gearLoading: false,
+    gearBusy: false,
+    selectedGearIds: new Set(),
+    gearPage: 1,
 };
 
 const WORKER_LABELS = {
@@ -144,6 +158,43 @@ const WORLD_BOSS_STAT_LABELS = Object.freeze({
     intelligence: '智力',
     luck: '幸运',
     stamina: '耐力',
+});
+const GEAR_PAGE_SIZE = 48;
+const GEAR_SALE_LIMIT = 500;
+const GEAR_SLOTS = Object.freeze([
+    'head',
+    'torso',
+    'legs',
+    'boots',
+    'gloves',
+    'ring_1',
+    'ring_2',
+    'amulet',
+    'charm',
+]);
+const GEAR_SLOT_DISPLAY = Object.freeze({
+    head: { label: '头部', icon: '⛑️' },
+    torso: { label: '躯干', icon: '🛡️' },
+    legs: { label: '腿部', icon: '👖' },
+    boots: { label: '靴子', icon: '👢' },
+    gloves: { label: '手套', icon: '🧤' },
+    ring: { label: '戒指', icon: '💍' },
+    ring_1: { label: '戒指 1', icon: '💍' },
+    ring_2: { label: '戒指 2', icon: '💍' },
+    amulet: { label: '护符', icon: '📿' },
+    charm: { label: '饰品', icon: '🔮' },
+    unknown: { label: '未知槽位', icon: '◇' },
+});
+const GEAR_RARITY_RANK = Object.freeze({
+    Common: 1,
+    Uncommon: 2,
+    Fine: 3,
+    Rare: 4,
+    Epic: 5,
+    Legendary: 6,
+    Mythic: 7,
+    Exotic: 8,
+    Arcane: 9,
 });
 
 function base64UrlToBytes(value) {
@@ -261,6 +312,9 @@ function showLogin() {
     state.eventSource = null;
     state.session = null;
     state.currentView = null;
+    state.gear = null;
+    state.gearError = null;
+    state.selectedGearIds.clear();
     elements['auth-loading-view'].hidden = true;
     elements['app-view'].hidden = true;
     elements['login-view'].hidden = false;
@@ -379,6 +433,447 @@ function renderRarityCounts(container, rarityCounts, emptyMessage) {
     }
 
     container.replaceChildren(fragment);
+}
+
+function gearSlotDisplay(slot) {
+    return GEAR_SLOT_DISPLAY[slot] || {
+        label: String(slot || '未知槽位'),
+        icon: '◇',
+    };
+}
+
+function createGearText(tag, className, text) {
+    const element = document.createElement(tag);
+
+    element.className = className;
+    element.textContent = text;
+    return element;
+}
+
+function createGearCard(gear, { equippedSlot = null } = {}) {
+    const card = document.createElement('article');
+    const header = document.createElement('div');
+    const title = document.createElement('div');
+    const rarity = rarityDisplay(gear.rarity);
+    const displayedSlot = gearSlotDisplay(equippedSlot || gear.slot);
+
+    card.className = [
+        'gear-card',
+        `rarity-${rarity.tone}`,
+        equippedSlot ? 'equipped' : '',
+        gear.isLocked ? 'locked' : '',
+    ].filter(Boolean).join(' ');
+    card.dataset.gearId = gear.id;
+    header.className = 'gear-card-header';
+    title.className = 'gear-card-title';
+
+    if (!equippedSlot) {
+        const selection = document.createElement('input');
+
+        selection.type = 'checkbox';
+        selection.className = 'gear-checkbox';
+        selection.dataset.gearSelect = gear.id;
+        selection.checked = state.selectedGearIds.has(gear.id);
+        selection.disabled = gear.isLocked || state.gearBusy ||
+            (
+                !selection.checked &&
+                state.selectedGearIds.size >= GEAR_SALE_LIMIT
+            );
+        selection.setAttribute('aria-label', `选择出售 ${gear.name}`);
+        header.append(selection);
+    }
+
+    title.append(
+        createGearText('strong', 'gear-name', gear.name),
+        createGearText(
+            'span',
+            `gear-rarity ${rarity.tone}`,
+            rarity.label,
+        ),
+    );
+    header.append(title);
+
+    const meta = createGearText(
+        'div',
+        'gear-meta',
+        `${displayedSlot.icon} ${displayedSlot.label} · 品质 ${formatNumber(gear.quality, 0)}% · +${formatNumber(gear.upgradeLevel, 0)}`,
+    );
+    const stats = document.createElement('dl');
+
+    stats.className = 'gear-card-stats';
+    for (const [label, value] of [
+        ['STR', gear.stats.strength],
+        ['INT', gear.stats.intelligence],
+        ['LUK', gear.stats.luck],
+        ['STA', gear.stats.stamina],
+    ]) {
+        const entry = document.createElement('div');
+
+        entry.append(
+            createGearText('dt', '', label),
+            createGearText('dd', '', `+${formatNumber(value, 0)}`),
+        );
+        stats.append(entry);
+    }
+
+    const footer = document.createElement('div');
+
+    footer.className = 'gear-card-footer';
+    footer.append(createGearText(
+        'span',
+        'gear-sell-value',
+        gear.sellValue > 0
+            ? `出售 ${formatNumber(gear.sellValue, 0)} 金币`
+            : '出售价值未知',
+    ));
+
+    if (equippedSlot) {
+        footer.append(createGearText('span', 'gear-equipped-mark', '已穿戴'));
+    } else if (gear.isLocked) {
+        footer.append(createGearText('span', 'gear-locked-mark', '已锁定'));
+    } else {
+        const actions = document.createElement('div');
+
+        actions.className = 'gear-equip-actions';
+        const targets = ['ring', 'ring_1', 'ring_2'].includes(gear.slot)
+            ? [
+                ['ring_1', '戴到戒指 1'],
+                ['ring_2', '戴到戒指 2'],
+            ]
+            : [[null, '穿戴']];
+
+        for (const [targetSlot, label] of targets) {
+            const button = createGearText('button', 'button small', label);
+
+            button.type = 'button';
+            button.dataset.equipGear = gear.id;
+            if (targetSlot) {
+                button.dataset.targetSlot = targetSlot;
+            }
+            button.disabled = state.gearBusy;
+            actions.append(button);
+        }
+        footer.append(actions);
+    }
+
+    card.append(header, meta, stats, footer);
+    return card;
+}
+
+function renderEquippedGears(gears) {
+    const equipped = gears.filter(gear => gear.isEquipped);
+    const used = new Set();
+    const fragment = document.createDocumentFragment();
+
+    for (const slot of GEAR_SLOTS) {
+        let gear = equipped.find(candidate =>
+            !used.has(candidate.id) && candidate.slot === slot,
+        );
+
+        if (!gear && ['ring_1', 'ring_2'].includes(slot)) {
+            gear = equipped.find(candidate =>
+                !used.has(candidate.id) &&
+                ['ring', 'ring_1', 'ring_2'].includes(candidate.slot),
+            );
+        }
+
+        if (gear) {
+            used.add(gear.id);
+            fragment.append(createGearCard(gear, { equippedSlot: slot }));
+            continue;
+        }
+
+        const empty = document.createElement('article');
+        const display = gearSlotDisplay(slot);
+
+        empty.className = 'gear-card empty-slot';
+        empty.append(
+            createGearText('span', 'gear-empty-icon', display.icon),
+            createGearText('strong', '', display.label),
+            createGearText('span', 'muted', '未穿戴'),
+        );
+        fragment.append(empty);
+    }
+
+    elements['gear-equipped-grid'].replaceChildren(fragment);
+}
+
+function filteredBackpackGears() {
+    const search = value('gear-search').trim().toLowerCase();
+    const slot = value('gear-slot-filter');
+    const rarity = value('gear-rarity-filter');
+    const sort = value('gear-sort');
+    const gears = (state.gear?.gears || []).filter(gear => {
+        if (gear.isEquipped) {
+            return false;
+        }
+
+        if (search && !gear.name.toLowerCase().includes(search)) {
+            return false;
+        }
+
+        if (slot !== 'all') {
+            const slotMatches = slot === 'ring'
+                ? ['ring', 'ring_1', 'ring_2'].includes(gear.slot)
+                : gear.slot === slot;
+
+            if (!slotMatches) {
+                return false;
+            }
+        }
+
+        return rarity === 'all' || gear.rarity === rarity;
+    });
+
+    return gears.sort((left, right) => {
+        if (sort === 'quality') {
+            return right.quality - left.quality ||
+                right.totalStats - left.totalStats;
+        }
+
+        if (sort === 'stats') {
+            return right.totalStats - left.totalStats ||
+                right.quality - left.quality;
+        }
+
+        if (sort === 'sell') {
+            return right.sellValue - left.sellValue ||
+                right.totalStats - left.totalStats;
+        }
+
+        if (sort === 'name') {
+            return left.name.localeCompare(right.name);
+        }
+
+        return (GEAR_RARITY_RANK[right.rarity] || 0) -
+            (GEAR_RARITY_RANK[left.rarity] || 0) ||
+            right.quality - left.quality ||
+            right.totalStats - left.totalStats;
+    });
+}
+
+function currentGearPage() {
+    const filtered = filteredBackpackGears();
+    const pageCount = Math.max(1, Math.ceil(filtered.length / GEAR_PAGE_SIZE));
+
+    state.gearPage = Math.min(Math.max(1, state.gearPage), pageCount);
+    const start = (state.gearPage - 1) * GEAR_PAGE_SIZE;
+
+    return {
+        filtered,
+        pageCount,
+        gears: filtered.slice(start, start + GEAR_PAGE_SIZE),
+    };
+}
+
+function renderBackpackGears() {
+    const allBackpack = (state.gear?.gears || [])
+        .filter(gear => !gear.isEquipped);
+    const { filtered, pageCount, gears } = currentGearPage();
+    const fragment = document.createDocumentFragment();
+
+    for (const gear of gears) {
+        fragment.append(createGearCard(gear));
+    }
+
+    if (gears.length === 0) {
+        fragment.append(createGearText(
+            'div',
+            'empty-state gear-empty-state',
+            allBackpack.length === 0
+                ? '背包中暂无装备。'
+                : '当前筛选条件下没有装备。',
+        ));
+    }
+
+    elements['gear-backpack-grid'].replaceChildren(fragment);
+    elements['gear-backpack-meta'].textContent =
+        `${formatNumber(allBackpack.length, 0)} 件装备 · 筛选 ${formatNumber(filtered.length, 0)} 件`;
+    elements['gear-selected-count'].textContent =
+        `已选择 ${formatNumber(state.selectedGearIds.size, 0)} 件`;
+    elements['gear-sell-selected'].disabled =
+        state.selectedGearIds.size === 0 || state.gearBusy;
+    elements['gear-select-page'].disabled =
+        state.gearBusy ||
+        state.selectedGearIds.size >= GEAR_SALE_LIMIT ||
+        !gears.some(gear => !gear.isLocked);
+    elements['gear-clear-selection'].disabled =
+        state.gearBusy || state.selectedGearIds.size === 0;
+    elements['gear-page-label'].textContent =
+        `第 ${state.gearPage} / ${pageCount} 页`;
+    elements['gear-page-prev'].disabled =
+        state.gearBusy || state.gearPage <= 1;
+    elements['gear-page-next'].disabled =
+        state.gearBusy || state.gearPage >= pageCount;
+}
+
+function renderGear() {
+    const snapshot = state.gear;
+    const controller = state.controller || {};
+
+    elements['gear-refresh'].disabled = state.gearLoading || state.gearBusy;
+    elements['gear-refresh'].textContent = state.gearLoading
+        ? '刷新中…'
+        : '刷新装备';
+    elements['gear-error'].hidden = !state.gearError;
+    elements['gear-error'].textContent = state.gearError || '';
+    elements['gear-content'].hidden = !snapshot;
+
+    if (state.gearLoading) {
+        elements['gear-status'].textContent = '正在从游戏接口读取装备…';
+    } else if (snapshot) {
+        elements['gear-status'].textContent =
+            `共 ${formatNumber(snapshot.gears.length, 0)} 件装备，可在自动钓鱼运行时直接管理。`;
+    } else if (controller.mode !== 'running') {
+        elements['gear-status'].textContent =
+            '请先启动自动化；装备管理需要使用已登录的 Playwright 会话。';
+    } else if (controller.browser !== 'open') {
+        elements['gear-status'].textContent =
+            'Playwright 浏览器当前已关闭，等待调度恢复后可继续管理。';
+    } else {
+        elements['gear-status'].textContent = '点击刷新读取当前装备。';
+    }
+
+    if (!snapshot) {
+        return;
+    }
+
+    elements['gear-equipped-count'].textContent =
+        formatNumber(snapshot.equippedCount, 0);
+    elements['gear-observed-at'].textContent =
+        `更新于 ${formatDate(snapshot.observedAt)}`;
+    for (const stat of ['strength', 'intelligence', 'luck', 'stamina']) {
+        elements[`gear-total-${stat}`].textContent =
+            `+${formatNumber(snapshot.equippedStats[stat], 0)}`;
+    }
+    renderEquippedGears(snapshot.gears);
+    renderBackpackGears();
+}
+
+async function loadGearInventory() {
+    if (state.gearLoading || state.gearBusy) {
+        return;
+    }
+
+    state.gearLoading = true;
+    state.gearError = null;
+    renderGear();
+
+    try {
+        const snapshot = await api('/api/gears');
+        const currentIds = new Set(snapshot.gears.map(gear => gear.id));
+
+        state.gear = snapshot;
+        state.selectedGearIds = new Set(
+            [...state.selectedGearIds].filter(id => currentIds.has(id)),
+        );
+    } catch (error) {
+        state.gearError = error.message;
+    } finally {
+        state.gearLoading = false;
+        renderGear();
+    }
+}
+
+function applyGearSnapshot(snapshot) {
+    const selectableIds = new Set(snapshot.gears
+        .filter(gear => !gear.isEquipped && !gear.isLocked)
+        .map(gear => gear.id));
+
+    state.gear = snapshot;
+    state.selectedGearIds = new Set(
+        [...state.selectedGearIds].filter(id => selectableIds.has(id)),
+    );
+}
+
+async function equipGear(gearId, targetSlot = null) {
+    if (state.gearBusy) {
+        return;
+    }
+
+    state.gearBusy = true;
+    state.gearError = null;
+    renderGear();
+
+    try {
+        const snapshot = await api('/api/gears/equip', {
+            method: 'POST',
+            body: { gearId, targetSlot },
+        });
+
+        applyGearSnapshot(snapshot);
+        showToast(snapshot.action?.changed === false
+            ? '这件装备已经处于穿戴状态。'
+            : '装备已穿戴。');
+    } catch (error) {
+        state.gearError = error.message;
+        showToast(error.message, true);
+    } finally {
+        state.gearBusy = false;
+        renderGear();
+    }
+}
+
+async function sellSelectedGears() {
+    if (state.gearBusy || state.selectedGearIds.size === 0) {
+        return;
+    }
+
+    const selected = (state.gear?.gears || []).filter(gear =>
+        state.selectedGearIds.has(gear.id) &&
+        !gear.isEquipped &&
+        !gear.isLocked,
+    );
+
+    if (selected.length === 0) {
+        state.selectedGearIds.clear();
+        renderGear();
+        showToast('当前选择中没有可出售的装备。', true);
+        return;
+    }
+
+    const estimatedGold = selected.reduce(
+        (total, gear) => total + gear.sellValue,
+        0,
+    );
+    const containsHighRarity = selected.some(gear =>
+        ['Exotic', 'Arcane'].includes(gear.rarity),
+    );
+    const message = [
+        containsHighRarity ? '所选装备包含奇异或奥术装备。' : null,
+        `确认出售 ${selected.length} 件装备？`,
+        estimatedGold > 0
+            ? `预计获得 ${formatNumber(estimatedGold, 0)} 金币。`
+            : null,
+        '出售后无法撤销。',
+    ].filter(Boolean).join('\n');
+
+    if (!window.confirm(message)) {
+        return;
+    }
+
+    state.gearBusy = true;
+    state.gearError = null;
+    renderGear();
+
+    try {
+        const snapshot = await api('/api/gears/sell', {
+            method: 'POST',
+            body: { gearIds: selected.map(gear => gear.id) },
+        });
+
+        state.selectedGearIds.clear();
+        applyGearSnapshot(snapshot);
+        showToast(
+            `已出售 ${formatNumber(snapshot.sale?.gearsSold, 0)} 件装备，获得 ${formatNumber(snapshot.sale?.goldEarned, 0)} 金币。`,
+        );
+    } catch (error) {
+        state.gearError = error.message;
+        showToast(error.message, true);
+    } finally {
+        state.gearBusy = false;
+        renderGear();
+    }
 }
 
 function renderSignedTone(element, value) {
@@ -644,6 +1139,15 @@ function setView(view, { force = false } = {}) {
         renderLogs();
     } else if (nextView === 'stats') {
         renderStats();
+    } else if (nextView === 'gear') {
+        renderGear();
+        if (
+            !state.gear &&
+            state.controller?.mode === 'running' &&
+            state.controller?.browser === 'open'
+        ) {
+            void loadGearInventory();
+        }
     }
 }
 
@@ -1271,6 +1775,7 @@ function renderLogs() {
 function renderAll() {
     renderOverview();
     renderStats();
+    renderGear();
     renderLogs();
     renderSettingsMeta();
 }
@@ -1301,7 +1806,28 @@ function connectEvents() {
     });
     source.addEventListener('controller', event => {
         state.controller = JSON.parse(event.data);
+
+        if (
+            state.controller.mode !== 'running' ||
+            state.controller.browser !== 'open'
+        ) {
+            state.gear = null;
+            state.gearError = null;
+            state.selectedGearIds.clear();
+        }
         renderOverview();
+        if (state.currentView === 'gear') {
+            renderGear();
+            if (
+                !state.gear &&
+                !state.gearLoading &&
+                state.controller.mode === 'running' &&
+                state.controller.browser === 'open' &&
+                state.controller.engine?.pageReady !== false
+            ) {
+                void loadGearInventory();
+            }
+        }
     });
     source.addEventListener('stats', event => {
         state.stats = JSON.parse(event.data);
@@ -1397,6 +1923,79 @@ elements['settings-back'].addEventListener('click', () => setView('overview'));
 document.querySelector('.topbar .brand-row').addEventListener('click', event => {
     event.preventDefault();
     setView('overview');
+});
+
+elements['gear-refresh'].addEventListener('click', () => {
+    void loadGearInventory();
+});
+elements['gear-backpack-grid'].addEventListener('change', event => {
+    const input = event.target.closest('[data-gear-select]');
+
+    if (!input) {
+        return;
+    }
+
+    if (input.checked) {
+        if (state.selectedGearIds.size >= GEAR_SALE_LIMIT) {
+            input.checked = false;
+            showToast(`单次最多选择 ${GEAR_SALE_LIMIT} 件装备。`, true);
+        } else {
+            state.selectedGearIds.add(input.dataset.gearSelect);
+        }
+    } else {
+        state.selectedGearIds.delete(input.dataset.gearSelect);
+    }
+    renderBackpackGears();
+});
+elements['gear-backpack-grid'].addEventListener('click', event => {
+    const button = event.target.closest('[data-equip-gear]');
+
+    if (button) {
+        void equipGear(
+            button.dataset.equipGear,
+            button.dataset.targetSlot || null,
+        );
+    }
+});
+elements['gear-select-page'].addEventListener('click', () => {
+    for (const gear of currentGearPage().gears) {
+        if (
+            !gear.isLocked &&
+            state.selectedGearIds.size < GEAR_SALE_LIMIT
+        ) {
+            state.selectedGearIds.add(gear.id);
+        }
+    }
+    renderBackpackGears();
+});
+elements['gear-clear-selection'].addEventListener('click', () => {
+    state.selectedGearIds.clear();
+    renderBackpackGears();
+});
+elements['gear-sell-selected'].addEventListener('click', () => {
+    void sellSelectedGears();
+});
+for (const id of [
+    'gear-search',
+    'gear-slot-filter',
+    'gear-rarity-filter',
+    'gear-sort',
+]) {
+    elements[id].addEventListener(
+        id === 'gear-search' ? 'input' : 'change',
+        () => {
+            state.gearPage = 1;
+            renderBackpackGears();
+        },
+    );
+}
+elements['gear-page-prev'].addEventListener('click', () => {
+    state.gearPage -= 1;
+    renderBackpackGears();
+});
+elements['gear-page-next'].addEventListener('click', () => {
+    state.gearPage += 1;
+    renderBackpackGears();
 });
 
 elements['settings-form'].addEventListener('input', () => {

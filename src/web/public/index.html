@@ -52,6 +52,7 @@
                 <nav id="main-nav" class="main-nav" aria-label="主导航">
                     <button class="nav-button" data-view="overview" type="button">概览</button>
                     <button class="nav-button" data-view="stats" type="button">收益</button>
+                    <button class="nav-button" data-view="gear" type="button">装备</button>
                     <button class="nav-button" data-view="logs" type="button">日志</button>
                 </nav>
                 <div class="topbar-actions">
@@ -277,6 +278,66 @@
                         </table>
                     </div>
                 </section>
+            </section>
+
+            <section id="gear-view" class="view" data-view-panel="gear" hidden>
+                <div class="page-heading">
+                    <div>
+                        <h1>装备管理</h1>
+                        <p id="gear-status" class="muted">启动自动化后可读取当前装备。</p>
+                    </div>
+                    <button id="gear-refresh" class="button ghost" type="button">刷新装备</button>
+                </div>
+
+                <div id="gear-error" class="notice warning" hidden></div>
+
+                <div id="gear-content" hidden>
+                    <section class="panel gear-equipped-panel">
+                        <div class="section-heading-row">
+                            <div>
+                                <span class="eyebrow">当前穿戴</span>
+                                <h2><strong id="gear-equipped-count">0</strong> / 9 个槽位</h2>
+                            </div>
+                            <span id="gear-observed-at" class="period-chip">尚未刷新</span>
+                        </div>
+                        <dl class="gear-stat-grid" aria-label="已穿戴装备属性合计">
+                            <div><dt>力量 STR</dt><dd id="gear-total-strength">0</dd></div>
+                            <div><dt>智力 INT</dt><dd id="gear-total-intelligence">0</dd></div>
+                            <div><dt>幸运 LUK</dt><dd id="gear-total-luck">0</dd></div>
+                            <div><dt>耐力 STA</dt><dd id="gear-total-stamina">0</dd></div>
+                        </dl>
+                        <div id="gear-equipped-grid" class="gear-grid equipped-grid"></div>
+                    </section>
+
+                    <section class="panel gear-backpack-panel">
+                        <div class="gear-backpack-heading">
+                            <div>
+                                <span class="eyebrow">背包装备</span>
+                                <h2 id="gear-backpack-meta">0 件装备</h2>
+                            </div>
+                            <div class="gear-selection-actions">
+                                <span id="gear-selected-count" class="muted">已选择 0 件</span>
+                                <button id="gear-select-page" class="button ghost small" type="button">选择本页可售</button>
+                                <button id="gear-clear-selection" class="button ghost small" type="button">清空选择</button>
+                                <button id="gear-sell-selected" class="button danger" type="button" disabled>出售所选</button>
+                            </div>
+                        </div>
+
+                        <div class="gear-filters">
+                            <label><span>搜索</span><input id="gear-search" type="search" placeholder="装备名称"></label>
+                            <label><span>槽位</span><select id="gear-slot-filter"><option value="all">全部槽位</option><option value="head">头部</option><option value="torso">躯干</option><option value="legs">腿部</option><option value="boots">靴子</option><option value="gloves">手套</option><option value="ring">戒指</option><option value="amulet">护符</option><option value="charm">饰品</option></select></label>
+                            <label><span>稀有度</span><select id="gear-rarity-filter"><option value="all">全部稀有度</option><option value="Common">普通</option><option value="Uncommon">罕见</option><option value="Fine">精良</option><option value="Rare">稀有</option><option value="Epic">史诗</option><option value="Legendary">传说</option><option value="Mythic">神话</option><option value="Exotic">奇异</option><option value="Arcane">奥术</option></select></label>
+                            <label><span>排序</span><select id="gear-sort"><option value="rarity">稀有度</option><option value="quality">品质</option><option value="stats">属性合计</option><option value="sell">出售价值</option><option value="name">名称</option></select></label>
+                        </div>
+
+                        <div id="gear-backpack-grid" class="gear-grid backpack-grid"></div>
+                        <div class="gear-pagination">
+                            <button id="gear-page-prev" class="button ghost small" type="button">上一页</button>
+                            <span id="gear-page-label" class="muted">第 1 / 1 页</span>
+                            <button id="gear-page-next" class="button ghost small" type="button">下一页</button>
+                        </div>
+                    </section>
+                </div>
             </section>
 
             <section id="logs-view" class="view" data-view-panel="logs" hidden>

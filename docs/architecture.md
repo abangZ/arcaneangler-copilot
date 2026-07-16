@@ -85,8 +85,10 @@ GET  /api/state
 GET  /api/settings
 PUT  /api/settings
 GET  /api/stats
+GET  /api/gears
 GET  /api/logs
 GET  /api/events
+POST /api/gears/equip|sell
 POST /api/actions/start|pause|resume|stop|restart
 ```
 
@@ -114,6 +116,7 @@ stopped -> starting -> running -> pausing -> paused
 - `resume`：创建新 Worker；如果当前处于 quiet hours，Engine 会立即进入 quiet 并保持浏览器关闭。
 - `stop`：关闭 Worker，配置保持不变。
 - `restart`：串行执行 stop/start。
+- `getGearInventory`、`equipGear`、`sellGears`：与生命周期命令共用同一队列，只在 Worker 运行且浏览器打开时转发给当前 Worker。装备 ID、戒指槽位和批量数量在转发前校验。
 - 会话级配置变化时自动执行受控重启；其他配置从下一轮 tick 生效。
 
 ### `src/core/automation-worker.js`
@@ -124,6 +127,7 @@ stopped -> starting -> running -> pausing -> paused
 - 页面脚本异常通过 `StatusReporter.log()` 记录，不整体转发页面 console。
 - 把 `StatsStore` 回调交给页面 adapter，Worker 和 HTTP handler 不解析游戏响应字段。
 - 页面 bootstrap 后读取角色等级、XP、当前地图/鱼饵和天气经验加成；抛竿响应即时更新 `newLevel/newXP/xpToNext`，并至多每分钟重新校准完整快照。
+- 装备管理通过页面已登录会话的 `ApiService.getGears()`、`equipGear()` 和 `sellGears()` 完成，不切换当前游戏页面。Worker 对穿戴和出售操作记录结构化日志；quiet hours 或手动暂停关闭浏览器时拒绝操作，不额外创建临时页面。
 - 角色快照通过 `StatusReporter` 的非落盘状态事件提供给 Web；读取失败不阻断统计或自动化。
 
 ### `src/core/automation-engine.js`
@@ -161,6 +165,8 @@ feature 只编排语义操作：
 
 HTTP API 和 Web UI 不得直接持有 DOM Locator，也不得绕过 Engine queue 调用页面方法。
 
+装备管理是显式的用户操作，不属于自动化 feature。Web 只发送 gear ID 和可选戒指槽位，`WorkerController` 串行转发；`ArcaneAnglerPage` 在提交穿戴/出售前重新读取服务器装备列表，拒绝不存在、已穿戴或已锁定的出售项。返回给 Web 的装备快照只包含展示所需字段，不转发 owner 等原始响应数据。
+
 ## 状态和日志
 
 ### `src/core/status-reporter.js`
@@ -196,7 +202,7 @@ SIGINT / SIGTERM 的顺序是：
 
 ## 验证
 
-- `pnpm run smoke:web`：challenge 登录、多终端 session/独立退出、CSRF、配置持久化、收益 API、SSE 和 Worker 控制。
+- `pnpm run smoke:web`：challenge 登录、多终端 session/独立退出、CSRF、配置持久化、收益 API、装备字段归一化、穿戴/批量出售、SSE 和 Worker 控制。
 - `pnpm run smoke:reporter`：运行配置快照、结构化输出、重复抑制和连续运行时的每日文件保留。
 - `pnpm run smoke:fishing`：默认普通延迟、90%/8%/2% 概率边界和比赛期间长停顿覆盖。
 - `pnpm run smoke:scheduler`：active/rest/quiet、比赛延后休息、夜间唤醒和早间延迟恢复。
