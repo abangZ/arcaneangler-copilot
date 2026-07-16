@@ -85,6 +85,29 @@ export class BaitFeature {
             return false;
         }
 
+        const knownBait = this.session.getKnownBaitQuantity?.(targetBait.id);
+        const cachedStockReady = knownBait?.equipped && (
+            targetBait.price === 0 ||
+            (
+                knownBait.quantity > 0 &&
+                knownBait.quantity >= baitSettings.restockThreshold
+            )
+        );
+
+        if (cachedStockReady) {
+            this.scheduleNextCheck(baitSettings.checkIntervalMs);
+            await this.reporter.update({
+                level: 'running',
+                phase: 'bait',
+                target: `已装备 ${targetBait.name}`,
+                activeFeature: this.label,
+                message: targetBait.price === 0
+                    ? '免费鱼饵已就绪，无需打开 Equipment 页面。'
+                    : `最近响应显示当前库存 ${knownBait.quantity}，无需打开 Equipment 页面。`,
+            });
+            return true;
+        }
+
         await this.reporter.update({
             level: 'running',
             phase: 'bait',

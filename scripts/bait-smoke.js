@@ -328,6 +328,23 @@ try {
         await page.evaluate(() => window.baitSmoke.purchaseClicks),
         2,
     );
+    const equipmentClickCount = await page.evaluate(() =>
+        window.baitSmoke.events.filter(event =>
+            event === 'sidebar:equipment',
+        ).length,
+    );
+
+    feature.reset();
+    assert.equal(await feature.tick(settingsSnapshot), true);
+    assert.equal(
+        await page.evaluate(() =>
+            window.baitSmoke.events.filter(event =>
+                event === 'sidebar:equipment',
+            ).length,
+        ),
+        equipmentClickCount,
+    );
+    assert.match(reporter.get().message, /最近响应显示当前库存 100/);
 
     await page.evaluate(() => window.baitSmoke.switchBiome(2));
     feature.reset();

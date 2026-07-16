@@ -36,6 +36,7 @@ function describeRuntime(settings, profile) {
         `无头模式=${enabledLabel(settings.browser.headless)}`,
         `自动钓鱼=${enabledLabel(settings.features.fishing.enabled)}`,
         `地图模式=${describeMapSettings(settings.features.map)}`,
+        `公会锦标赛优先=${enabledLabel(settings.features.map.prioritizeTournament)}`,
         `自动鱼饵=${enabledLabel(settings.features.bait.enabled)}`,
         `自动验证=${enabledLabel(settings.features.verification.enabled)}`,
         `Chromium=${profile.browserVersion}`,
@@ -182,9 +183,16 @@ export class AutomationWorker {
                     id: context.baitId,
                     name: context.baitName,
                     price: context.baitPrice,
+                    quantity: Number.isSafeInteger(
+                        Number(result?.baitQuantity),
+                    ) && Number(result?.baitQuantity) >= 0
+                        ? Number(result.baitQuantity)
+                        : previous.bait?.quantity ?? null,
                 }
                 : previous.bait || null,
+            tournament: previous.tournament || null,
             derby: previous.derby || null,
+            competitions: previous.competitions || [],
             observedAt: new Date().toISOString(),
         };
 

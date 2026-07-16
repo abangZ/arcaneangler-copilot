@@ -38,10 +38,14 @@ export class MapFeature {
         this.reporter = reporter;
         this.nextCheckAt = 0;
         this.lastConfigurationKey = null;
+        this.lastCompetitionKey = null;
     }
 
     isEnabled(settings) {
-        return settings.features.map.mode !== MAP_MODE_OFF;
+        const mapSettings = settings.features.map;
+
+        return mapSettings.mode !== MAP_MODE_OFF ||
+            mapSettings.prioritizeTournament;
     }
 
     reset() {
@@ -62,6 +66,18 @@ export class MapFeature {
 
     scheduleNextCheck(checkIntervalMs) {
         this.nextCheckAt = Date.now() + checkIntervalMs;
+    }
+
+    refreshCompetition() {
+        const activeCompetition = this.session.getActiveCompetition?.();
+        const competitionKey = activeCompetition
+            ? `${activeCompetition.type}:${activeCompetition.id}`
+            : 'none';
+
+        if (competitionKey !== this.lastCompetitionKey) {
+            this.lastCompetitionKey = competitionKey;
+            this.nextCheckAt = 0;
+        }
     }
 
     async reportWaiting(target, message) {
@@ -122,6 +138,16 @@ export class MapFeature {
     }
 
     selectTarget(mapSettings, state) {
+        if (
+            mapSettings.prioritizeTournament &&
+            state.activeTournament?.isRegistered
+        ) {
+            return {
+                biomeId: state.activeTournament.biomeId,
+                reason: `公会正在参与锦标赛 #${state.activeTournament.number || state.activeTournament.id}`,
+            };
+        }
+
         if (mapSettings.mode === MAP_MODE_FIXED) {
             return {
                 biomeId: mapSettings.targetBiomeId,
@@ -137,6 +163,10 @@ export class MapFeature {
                 biomeId: state.activeDerby.biomeId,
                 reason: `已参与的进行中 Derby #${state.activeDerby.number || state.activeDerby.id}`,
             };
+        }
+
+        if (mapSettings.mode !== MAP_MODE_AUTO) {
+            return null;
         }
 
         const bestBiome = chooseBestBiome(
@@ -157,6 +187,8 @@ export class MapFeature {
     async tick(settings) {
         const mapSettings = this.refreshConfiguration(settings);
 
+        this.refreshCompetition();
+
         if (Date.now() < this.nextCheckAt) {
             return false;
         }
@@ -170,14 +202,16 @@ export class MapFeature {
             phase: 'map',
             target: mapSettings.mode === MAP_MODE_AUTO
                 ? '检查赛事和最佳地图'
+                : mapSettings.prioritizeTournament
+                    ? '检查公会锦标赛地图'
                 : `检查固定目标 Biome ${mapSettings.targetBiomeId}`,
             activeFeature: this.label,
-            message: '正在读取已解锁地图、当前天气和赛事状态。',
+            message: mapSettings.mode === MAP_MODE_AUTO
+                ? '正在读取已解锁地图、当前天气和赛事状态。'
+                : '正在读取已解锁地图和赛事状态。',
         });
 
-        let state = await this.session.getMapAutomationState({
-            includeAutoData: mapSettings.mode === MAP_MODE_AUTO,
-        });
+        let state = await this.session.getMapAutomationState();
 
         if (mapSettings.mode === MAP_MODE_AUTO) {
             state = await this.registerUpcomingDerbies(state);
@@ -188,8 +222,12 @@ export class MapFeature {
         if (!target) {
             this.scheduleNextCheck(mapSettings.checkIntervalMs);
             await this.reportWaiting(
-                '等待可用地图',
-                '当前没有可选择的已解锁地图，将在下次检查时重试。',
+                mapSettings.mode === MAP_MODE_OFF
+                    ? '等待公会锦标赛'
+                    : '等待可用地图',
+                mapSettings.mode === MAP_MODE_OFF
+                    ? '自动切地图已关闭；当前没有已参与的公会锦标赛，将在下次检查时重试。'
+                    : '当前没有可选择的已解锁地图，将在下次检查时重试。',
             );
             await this.session.openFishingPage();
             return true;

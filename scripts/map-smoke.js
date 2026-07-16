@@ -34,7 +34,7 @@ const feature = new MapFeature({
     reporter: {},
 });
 const eventTarget = feature.selectTarget(
-    { mode: 'auto' },
+    { mode: 'auto', prioritizeTournament: true },
     {
         activeDerby: {
             id: 9,
@@ -53,6 +53,77 @@ const eventTarget = feature.selectTarget(
 
 assert.equal(eventTarget.biomeId, 3);
 assert.match(eventTarget.reason, /Derby #42/);
+const tournamentTarget = feature.selectTarget(
+    { mode: 'auto', prioritizeTournament: true },
+    {
+        activeTournament: {
+            id: 226,
+            number: 226,
+            biomeId: 2,
+            isRegistered: true,
+        },
+        activeDerby: {
+            id: 9,
+            number: 42,
+            biomeId: 3,
+            isRegistered: true,
+        },
+        unlockedBiomes: [1, 2, 3],
+        weatherByBiome: {},
+    },
+);
+
+assert.equal(tournamentTarget.biomeId, 2);
+assert.match(tournamentTarget.reason, /公会正在参与锦标赛 #226/);
+
+const disabledTournamentTarget = feature.selectTarget(
+    { mode: 'auto', prioritizeTournament: false },
+    {
+        activeTournament: {
+            id: 226,
+            number: 226,
+            biomeId: 2,
+            isRegistered: true,
+        },
+        activeDerby: {
+            id: 9,
+            number: 42,
+            biomeId: 3,
+            isRegistered: true,
+        },
+        unlockedBiomes: [1, 2, 3],
+        weatherByBiome: {},
+    },
+);
+
+assert.equal(disabledTournamentTarget.biomeId, 3);
+assert.match(disabledTournamentTarget.reason, /Derby #42/);
+
+const tournamentOnlyTarget = feature.selectTarget(
+    { mode: 'off', prioritizeTournament: true },
+    {
+        activeTournament: {
+            id: 226,
+            number: 226,
+            biomeId: 2,
+            isRegistered: true,
+        },
+        unlockedBiomes: [1, 2, 3],
+        weatherByBiome: {},
+    },
+);
+
+assert.equal(tournamentOnlyTarget.biomeId, 2);
+assert.equal(feature.isEnabled({
+    features: {
+        map: { mode: 'off', prioritizeTournament: true },
+    },
+}), true);
+assert.equal(feature.isEnabled({
+    features: {
+        map: { mode: 'off', prioritizeTournament: false },
+    },
+}), false);
 
 const profile = createBrowserProfile();
 const browser = await chromium.launch({
@@ -91,6 +162,7 @@ try {
                     xpToNext: 900,
                     currentBiome: 1,
                     equippedBait: 'bait-1',
+                    baitInventory: { 'bait-1': 73 },
                     unlockedBiomes: [1, 2, 3, 12],
                     is_ironman: false,
                     boat: null,
@@ -123,6 +195,26 @@ try {
                         participant_count: 23,
                     }],
                 },
+                tournaments: {
+                    active: {
+                        id: 226,
+                        tournament_number: 226,
+                        tournament_type: 'normal',
+                        biome_id: 12,
+                        start_time: '2026-07-16T01:00:00.000Z',
+                        end_time: '2026-07-16T02:30:00.000Z',
+                        participant_count: 8,
+                    },
+                    upcoming: [{
+                        id: 227,
+                        tournament_number: 227,
+                        tournament_type: 'normal',
+                        biome_id: 2,
+                        start_time: '2026-07-17T01:00:00.000Z',
+                        end_time: '2026-07-17T02:30:00.000Z',
+                        participant_count: 5,
+                    }],
+                },
                 events: [],
             };
 
@@ -142,6 +234,28 @@ try {
                 },
                 async getCurrentDerbies() {
                     return structuredClone(state.derbies);
+                },
+                async getCurrentTournaments() {
+                    return structuredClone(state.tournaments);
+                },
+                async getMyGuild() {
+                    return { guild: { guild_id: 501 } };
+                },
+                async getTournamentStandings() {
+                    return {
+                        standings: [
+                            {
+                                guild_id: 400,
+                                total_points: 20_000,
+                                fish_caught: 26,
+                            },
+                            {
+                                guild_id: 501,
+                                total_points: 15_000,
+                                fish_caught: 19,
+                            },
+                        ],
+                    };
                 },
                 async getDerbyStandings() {
                     return {
@@ -253,6 +367,8 @@ try {
 
     assert.equal(initialState.eligibleDerbyCount, 1);
     assert.equal(initialState.activeDerby.isRegistered, true);
+    assert.equal(initialState.activeTournament.isRegistered, true);
+    assert.equal(initialState.activeTournament.biomeId, 12);
     assert.equal(dashboard.level, 27);
     assert.equal(dashboard.xp, 450);
     assert.equal(dashboard.xpToNext, 900);
@@ -266,7 +382,38 @@ try {
         id: 'bait-1',
         name: 'River Grub',
         price: 12,
+        quantity: 73,
     });
+    assert.deepEqual(dashboard.tournament, {
+        status: 'active',
+        id: '226',
+        number: 226,
+        type: 'normal',
+        biome: {
+            id: '12',
+            name: 'Biome Twelve',
+        },
+        startAt: '2026-07-16T01:00:00.000Z',
+        endAt: '2026-07-16T02:30:00.000Z',
+        participantCount: 8,
+        standing: {
+            rank: 2,
+            points: 15_000,
+            fishCaught: 19,
+        },
+    });
+    assert.equal(
+        dashboard.competitions.filter(item =>
+            item.type === 'guild-tournament',
+        ).length,
+        2,
+    );
+    const knownBait = session.getKnownBaitQuantity('bait-1');
+
+    assert.equal(knownBait.baitId, 'bait-1');
+    assert.equal(knownBait.quantity, 73);
+    assert.equal(knownBait.equipped, true);
+    assert.ok(Date.parse(knownBait.observedAt));
     assert.deepEqual(dashboard.derby, {
         status: 'active',
         id: '8',
@@ -334,7 +481,7 @@ try {
     assert.ok(result.events.every(event => event.trusted));
 
     console.log(
-        'Map smoke passed: derby registration and biome selection clicks are trusted.',
+        'Map smoke passed: guild tournament priority, derby registration, schedules and biome clicks work.',
     );
 } finally {
     await browser.close();

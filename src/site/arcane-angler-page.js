@@ -8,6 +8,10 @@ import {
     sleep,
     waitUntil,
 } from '../core/browser-utils.js';
+import {
+    findActiveCompetition,
+    normalizeCompetitionSchedule,
+} from '../core/competition-schedule.js';
 import { AutomationPausedError } from '../core/operation-scheduler.js';
 
 function randomFloat(min, max) {
@@ -40,7 +44,63 @@ export class ArcaneAnglerPage {
         this.canAutomate = canAutomate;
         this.onCastResult = onCastResult;
         this.pointerPosition = { x: 640, y: 450 };
+        this.competitionSchedule = [];
+        this.baitQuantities = new Map();
+        this.equippedBaitId = null;
         this.attachPage(page);
+    }
+
+    rememberCompetitionSchedule(competitions) {
+        this.competitionSchedule = normalizeCompetitionSchedule(competitions);
+        return this.getCompetitionSchedule();
+    }
+
+    getCompetitionSchedule() {
+        return structuredClone(this.competitionSchedule);
+    }
+
+    getActiveCompetition() {
+        return findActiveCompetition(this.competitionSchedule);
+    }
+
+    rememberBaitQuantity(baitId, quantity, { equipped = false } = {}) {
+        const normalizedBaitId = String(baitId ?? '').trim();
+        const normalizedQuantity = Number(quantity);
+
+        if (
+            !normalizedBaitId ||
+            !Number.isSafeInteger(normalizedQuantity) ||
+            normalizedQuantity < 0
+        ) {
+            return null;
+        }
+
+        const state = {
+            baitId: normalizedBaitId,
+            quantity: normalizedQuantity,
+            observedAt: new Date().toISOString(),
+        };
+
+        this.baitQuantities.set(normalizedBaitId, state);
+        if (equipped) {
+            this.equippedBaitId = normalizedBaitId;
+        }
+        return structuredClone(state);
+    }
+
+    rememberEquippedBait(baitId) {
+        this.equippedBaitId = String(baitId ?? '').trim() || null;
+    }
+
+    getKnownBaitQuantity(baitId) {
+        const state = this.baitQuantities.get(String(baitId ?? '').trim());
+
+        return state
+            ? {
+                ...structuredClone(state),
+                equipped: this.equippedBaitId === state.baitId,
+            }
+            : null;
     }
 
     assertAutomationAllowed() {
@@ -66,10 +126,6 @@ export class ArcaneAnglerPage {
     }
 
     async collectCastResponse(response) {
-        if (!this.onCastResult) {
-            return;
-        }
-
         const request = response.request();
         const pathname = new URL(response.url()).pathname;
 
@@ -89,9 +145,18 @@ export class ArcaneAnglerPage {
                 payload.result &&
                 typeof payload.result === 'object'
             ) {
-                const context = await this.getCastStatsContext(payload.result);
+                this.rememberBaitQuantity(
+                    payload.result.equippedBait,
+                    payload.result.baitQuantity,
+                    { equipped: true },
+                );
+                if (this.onCastResult) {
+                    const context = await this.getCastStatsContext(
+                        payload.result,
+                    );
 
-                await this.onCastResult(payload.result, context);
+                    await this.onCastResult(payload.result, context);
+                }
             }
         } catch (error) {
             await this.reporter.log({
@@ -150,33 +215,66 @@ export class ArcaneAnglerPage {
                 throw new Error('页面未提供 ApiService。');
             }
 
-            const playerResponse = await window.ApiService.getPlayerData();
-            const player = playerResponse?.player || playerResponse;
-            let weatherByBiome = {};
-            let derbyResponse = {};
-
-            await Promise.all([
-                (async () => {
-                    try {
-                        const weatherResponse =
-                            await window.ApiService.getAllBiomeWeather();
-
-                        weatherByBiome = weatherResponse?.weather ||
-                            weatherResponse ||
-                            {};
-                    } catch {
-                        // 天气接口失败时仍返回玩家等级和当前装备。
-                    }
-                })(),
-                (async () => {
-                    try {
-                        derbyResponse =
-                            await window.ApiService.getCurrentDerbies();
-                    } catch {
-                        // 赛事接口失败时仍返回其他首页数据。
-                    }
-                })(),
+            const [
+                playerResponse,
+                weatherResponse,
+                derbyResponse,
+                tournamentResponse,
+                guildResponse,
+            ] = await Promise.all([
+                window.ApiService.getPlayerData(),
+                window.ApiService.getAllBiomeWeather().catch(() => ({})),
+                window.ApiService.getCurrentDerbies().catch(() => ({})),
+                window.ApiService.getCurrentTournaments?.().catch(() => ({})) ||
+                    Promise.resolve({}),
+                window.ApiService.getMyGuild?.().catch(() => ({})) ||
+                    Promise.resolve({}),
             ]);
+            const player = playerResponse?.player || playerResponse;
+            const weatherByBiome = weatherResponse?.weather ||
+                weatherResponse ||
+                {};
+            const tournamentCandidates = [
+                ...(tournamentResponse?.active
+                    ? [tournamentResponse.active]
+                    : []),
+                ...(Array.isArray(tournamentResponse?.upcoming)
+                    ? tournamentResponse.upcoming
+                    : []),
+            ];
+            const guildId = guildResponse?.guild?.guild_id;
+            const participatingTournamentIds = new Set();
+            const tournamentStandingsById = new Map();
+
+            if (
+                guildId != null &&
+                typeof window.ApiService.getTournamentStandings === 'function'
+            ) {
+                const standings = await Promise.all(
+                    tournamentCandidates.map(tournament =>
+                        window.ApiService.getTournamentStandings(tournament.id)
+                            .catch(() => ({})),
+                    ),
+                );
+
+                standings.forEach((response, index) => {
+                    const tournamentId = String(
+                        tournamentCandidates[index]?.id ?? '',
+                    );
+                    const entries = Array.isArray(response?.standings)
+                        ? response.standings
+                        : [];
+
+                    tournamentStandingsById.set(tournamentId, entries);
+                    if (
+                        entries.some(entry =>
+                            Number(entry?.guild_id) === Number(guildId),
+                        )
+                    ) {
+                        participatingTournamentIds.add(tournamentId);
+                    }
+                });
+            }
 
             const biomeId = String(player?.currentBiome ?? '').trim();
             const baitId = String(player?.equippedBait ?? '').trim();
@@ -199,8 +297,11 @@ export class ArcaneAnglerPage {
             }
 
             const baitPrice = Number(bait?.price);
+            const baitQuantity = Number(player?.baitInventory?.[baitId]);
             const activeDerby = derbyResponse?.active;
-            const upcomingDerby = (Array.isArray(derbyResponse?.upcoming)
+            const registeredUpcomingDerbies = (Array.isArray(
+                derbyResponse?.upcoming,
+            )
                 ? derbyResponse.upcoming
                 : [])
                 .filter(derby => derby?.is_registered)
@@ -212,12 +313,92 @@ export class ArcaneAnglerPage {
                         (Number.isFinite(leftStart) ? leftStart : Infinity) -
                         (Number.isFinite(rightStart) ? rightStart : Infinity)
                     );
-                })[0];
+                });
+            const upcomingDerby = registeredUpcomingDerbies[0];
             const selectedDerby = activeDerby?.is_registered
                 ? { ...activeDerby, status: 'active' }
                 : upcomingDerby
                     ? { ...upcomingDerby, status: 'upcoming' }
                     : null;
+            const participatingTournaments = tournamentCandidates
+                .filter(tournament => participatingTournamentIds.has(
+                    String(tournament?.id),
+                ));
+            const activeTournamentId = String(
+                tournamentResponse?.active?.id ?? '',
+            );
+            const selectedTournament = participatingTournaments
+                .map(tournament => ({
+                    ...tournament,
+                    status: String(tournament?.id) === activeTournamentId
+                        ? 'active'
+                        : 'upcoming',
+                }))
+                .sort((left, right) => {
+                    if (left.status !== right.status) {
+                        return left.status === 'active' ? -1 : 1;
+                    }
+
+                    return (
+                        Date.parse(left?.start_time) -
+                        Date.parse(right?.start_time)
+                    );
+                })[0] || null;
+            const selectedTournamentStandings = selectedTournament
+                ? tournamentStandingsById.get(
+                    String(selectedTournament.id),
+                ) || []
+                : [];
+            const tournamentStandingIndex = selectedTournamentStandings
+                .findIndex(entry =>
+                    Number(entry?.guild_id) === Number(guildId),
+                );
+            const tournamentStandingEntry =
+                selectedTournamentStandings[tournamentStandingIndex];
+            const tournamentStandingPoints =
+                tournamentStandingEntry?.total_points == null
+                    ? null
+                    : Number(tournamentStandingEntry.total_points);
+            const tournamentStandingFish =
+                tournamentStandingEntry?.fish_caught == null
+                    ? null
+                    : Number(tournamentStandingEntry.fish_caught);
+            const tournamentStanding =
+                selectedTournament?.status === 'active' &&
+                tournamentStandingIndex >= 0
+                    ? {
+                        rank: tournamentStandingIndex + 1,
+                        points: tournamentStandingPoints != null &&
+                            Number.isFinite(tournamentStandingPoints)
+                            ? tournamentStandingPoints
+                            : null,
+                        fishCaught: tournamentStandingFish != null &&
+                            Number.isFinite(tournamentStandingFish)
+                            ? tournamentStandingFish
+                            : null,
+                    }
+                    : null;
+            const competitions = [
+                ...participatingTournaments.map(tournament => ({
+                    type: 'guild-tournament',
+                    id: tournament.id,
+                    number: tournament.tournament_number,
+                    biomeId: tournament.biome_id,
+                    startAt: tournament.start_time,
+                    endAt: tournament.end_time,
+                })),
+                ...[
+                    ...(activeDerby?.is_registered ? [activeDerby] : []),
+                    ...registeredUpcomingDerbies,
+                ].map(derby => ({
+                    type: 'derby',
+                    id: derby.id,
+                    number: derby.derby_number,
+                    biomeId: derby.biome_id,
+                    startAt: derby.start_time,
+                    endAt: derby.end_time,
+                })),
+            ];
             const playerUserId = player?.userId ?? player?.id;
             let derbyStanding = null;
 
@@ -259,6 +440,13 @@ export class ArcaneAnglerPage {
             const participantCount = Number(
                 selectedDerby?.participant_count,
             );
+            const tournamentBiomeId = String(
+                selectedTournament?.biome_id ?? '',
+            ).trim();
+            const tournamentBiome = window.BIOMES?.[tournamentBiomeId] || null;
+            const tournamentParticipantCount = Number(
+                selectedTournament?.participant_count,
+            );
 
             return {
                 level: Number(player?.level),
@@ -282,6 +470,46 @@ export class ArcaneAnglerPage {
                         price: Number.isFinite(baitPrice) && baitPrice >= 0
                             ? baitPrice
                             : null,
+                        quantity: Number.isSafeInteger(baitQuantity) &&
+                            baitQuantity >= 0
+                            ? baitQuantity
+                            : null,
+                    }
+                    : null,
+                tournament: selectedTournament
+                    ? {
+                        status: selectedTournament.status,
+                        id: String(
+                            selectedTournament.id ?? '',
+                        ).trim() || null,
+                        number: Number.isFinite(
+                            Number(selectedTournament.tournament_number),
+                        )
+                            ? Number(selectedTournament.tournament_number)
+                            : null,
+                        type: String(
+                            selectedTournament.tournament_type || 'normal',
+                        ),
+                        biome: tournamentBiomeId
+                            ? {
+                                id: tournamentBiomeId,
+                                name: String(
+                                    tournamentBiome?.name || '',
+                                ).trim() || `地图 ${tournamentBiomeId}`,
+                            }
+                            : null,
+                        startAt: String(
+                            selectedTournament.start_time || '',
+                        ).trim() || null,
+                        endAt: String(
+                            selectedTournament.end_time || '',
+                        ).trim() || null,
+                        participantCount: Number.isFinite(
+                            tournamentParticipantCount,
+                        )
+                            ? tournamentParticipantCount
+                            : null,
+                        standing: tournamentStanding,
                     }
                     : null,
                 derby: selectedDerby
@@ -315,6 +543,7 @@ export class ArcaneAnglerPage {
                         standing: derbyStanding,
                     }
                     : null,
+                competitions,
             };
         });
         const normalizedNumber = (value, { positive = false } = {}) => {
@@ -325,13 +554,30 @@ export class ArcaneAnglerPage {
                 : null;
         };
 
+        const competitions = this.rememberCompetitionSchedule(
+            snapshot.competitions,
+        );
+
+        if (snapshot.bait?.id) {
+            this.rememberEquippedBait(snapshot.bait.id);
+            if (snapshot.bait.quantity != null) {
+                this.rememberBaitQuantity(
+                    snapshot.bait.id,
+                    snapshot.bait.quantity,
+                    { equipped: true },
+                );
+            }
+        }
+
         return {
             level: normalizedNumber(snapshot.level),
             xp: normalizedNumber(snapshot.xp),
             xpToNext: normalizedNumber(snapshot.xpToNext, { positive: true }),
             biome: snapshot.biome,
             bait: snapshot.bait,
+            tournament: snapshot.tournament,
             derby: snapshot.derby,
+            competitions,
             observedAt: new Date().toISOString(),
         };
     }
@@ -873,7 +1119,13 @@ export class ArcaneAnglerPage {
                 throw new Error('页面未提供 ApiService。');
             }
 
-            const [playerResponse, weatherResponse, derbyResponse] =
+            const [
+                playerResponse,
+                weatherResponse,
+                derbyResponse,
+                tournamentResponse,
+                guildResponse,
+            ] =
                 await Promise.all([
                     window.ApiService.getPlayerData(),
                     shouldLoadAutoData
@@ -881,6 +1133,14 @@ export class ArcaneAnglerPage {
                         : Promise.resolve({}),
                     shouldLoadAutoData
                         ? window.ApiService.getCurrentDerbies()
+                        : Promise.resolve({}),
+                    shouldLoadAutoData
+                        ? window.ApiService.getCurrentTournaments?.() ||
+                            Promise.resolve({})
+                        : Promise.resolve({}),
+                    shouldLoadAutoData
+                        ? window.ApiService.getMyGuild?.().catch(() => ({})) ||
+                            Promise.resolve({})
                         : Promise.resolve({}),
                 ]);
             const player = playerResponse?.player || playerResponse;
@@ -908,6 +1168,54 @@ export class ArcaneAnglerPage {
                 );
             });
             const active = derbyResponse?.active || null;
+            const tournamentCandidates = [
+                ...(tournamentResponse?.active
+                    ? [tournamentResponse.active]
+                    : []),
+                ...(Array.isArray(tournamentResponse?.upcoming)
+                    ? tournamentResponse.upcoming
+                    : []),
+            ];
+            const guildId = guildResponse?.guild?.guild_id;
+            const participatingTournamentIds = new Set();
+
+            if (
+                guildId != null &&
+                typeof window.ApiService.getTournamentStandings === 'function'
+            ) {
+                const standings = await Promise.all(
+                    tournamentCandidates.map(tournament =>
+                        window.ApiService.getTournamentStandings(tournament.id)
+                            .catch(() => ({})),
+                    ),
+                );
+
+                standings.forEach((response, index) => {
+                    if (
+                        (Array.isArray(response?.standings)
+                            ? response.standings
+                            : [])
+                            .some(entry =>
+                                Number(entry?.guild_id) === Number(guildId),
+                            )
+                    ) {
+                        participatingTournamentIds.add(
+                            String(tournamentCandidates[index]?.id),
+                        );
+                    }
+                });
+            }
+
+            const activeTournament = tournamentResponse?.active || null;
+            const registeredDerbies = [
+                ...(active?.is_registered ? [active] : []),
+                ...upcoming.filter(derby => derby?.is_registered),
+            ];
+            const participatingTournaments = tournamentCandidates.filter(
+                tournament => participatingTournamentIds.has(
+                    String(tournament?.id),
+                ),
+            );
             const biomes = Object.fromEntries(
                 Object.entries(window.BIOMES || {}).map(([id, biome]) => [
                     Number(id),
@@ -939,9 +1247,45 @@ export class ArcaneAnglerPage {
                         number: Number(active.derby_number) || null,
                         biomeId: Number(active.biome_id),
                         isRegistered: Boolean(active.is_registered),
+                        startAt: String(active.start_time || '') || null,
+                        endAt: String(active.end_time || '') || null,
+                    }
+                    : null,
+                activeTournament: activeTournament
+                    ? {
+                        id: Number(activeTournament.id),
+                        number: Number(
+                            activeTournament.tournament_number,
+                        ) || null,
+                        biomeId: Number(activeTournament.biome_id),
+                        isRegistered: participatingTournamentIds.has(
+                            String(activeTournament.id),
+                        ),
+                        startAt: String(
+                            activeTournament.start_time || '',
+                        ) || null,
+                        endAt: String(activeTournament.end_time || '') || null,
                     }
                     : null,
                 eligibleDerbyCount: eligibleDerbies.length,
+                competitions: [
+                    ...participatingTournaments.map(tournament => ({
+                        type: 'guild-tournament',
+                        id: tournament.id,
+                        number: tournament.tournament_number,
+                        biomeId: tournament.biome_id,
+                        startAt: tournament.start_time,
+                        endAt: tournament.end_time,
+                    })),
+                    ...registeredDerbies.map(derby => ({
+                        type: 'derby',
+                        id: derby.id,
+                        number: derby.derby_number,
+                        biomeId: derby.biome_id,
+                        startAt: derby.start_time,
+                        endAt: derby.end_time,
+                    })),
+                ],
             };
         }, includeAutoData);
 
@@ -952,6 +1296,9 @@ export class ArcaneAnglerPage {
             throw new Error('无法读取当前地图。');
         }
 
+        state.competitions = this.rememberCompetitionSchedule(
+            state.competitions,
+        );
         return state;
     }
 
@@ -1245,13 +1592,20 @@ export class ArcaneAnglerPage {
         const equipButton = card.locator(
             'button.w-full.py-2.rounded.font-bold.text-sm',
         ).last();
+        const equipped = className.includes('border-yellow-400');
+
+        if (Number.isSafeInteger(stock) && stock >= 0) {
+            this.rememberBaitQuantity(baitId, stock, { equipped });
+        } else if (equipped) {
+            this.rememberEquippedBait(baitId);
+        }
 
         return {
             id: baitId,
             name: bait.name,
             price: bait.price,
             stock,
-            equipped: className.includes('border-yellow-400'),
+            equipped,
             canPurchase: bait.price > 0 &&
                 await customInput.count() > 0 &&
                 await customInput.isEnabled(),
@@ -1331,6 +1685,7 @@ export class ArcaneAnglerPage {
             shouldStop: this.shouldStop,
         });
 
+        this.rememberBaitQuantity(baitId, current.stock);
         return { purchased: true, stock: current.stock };
     }
 
@@ -1338,6 +1693,7 @@ export class ArcaneAnglerPage {
         const state = await this.inspectBait(baitId, catalog);
 
         if (state.equipped) {
+            this.rememberEquippedBait(baitId);
             return { equipped: true };
         }
 
@@ -1381,6 +1737,7 @@ export class ArcaneAnglerPage {
             shouldStop: this.shouldStop,
         });
 
+        this.rememberEquippedBait(baitId);
         return { equipped: true };
     }
 

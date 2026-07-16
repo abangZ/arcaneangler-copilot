@@ -31,7 +31,8 @@ export const DEFAULT_SETTINGS = deepFreeze({
             clickDelayMaxMs: 2_000,
         },
         map: {
-            mode: 'off',
+            mode: 'auto',
+            prioritizeTournament: true,
             targetBiomeId: null,
             checkIntervalMs: 3_600_000,
         },
@@ -178,7 +179,12 @@ export function validateSettings(input) {
     const map = expectObject(features.map, '自动地图配置');
     expectKnownKeys(
         map,
-        ['mode', 'targetBiomeId', 'checkIntervalMs'],
+        [
+            'mode',
+            'prioritizeTournament',
+            'targetBiomeId',
+            'checkIntervalMs',
+        ],
         '自动地图配置',
     );
 
@@ -272,6 +278,10 @@ export function validateSettings(input) {
                     map.mode,
                     '地图模式',
                     ['off', 'fixed', 'auto'],
+                ),
+                prioritizeTournament: readBoolean(
+                    map.prioritizeTournament,
+                    '公会锦标赛优先开关',
                 ),
                 targetBiomeId: map.targetBiomeId == null
                     ? null

@@ -22,9 +22,11 @@ const CAST_DELAY_TIERS = Object.freeze([
 export function selectCastDelay(fishingSettings, {
     chance = Math.random,
     integer = randomInteger,
+    competitionActive = false,
 } = {}) {
     const roll = chance();
     const tier = CAST_DELAY_TIERS.find(candidate =>
+        (!competitionActive || candidate.label !== '较长停顿') &&
         roll < candidate.threshold,
     );
 
@@ -46,6 +48,7 @@ export function selectCastDelay(fishingSettings, {
 
 export async function waitForCastDelay(durationMs, {
     assertAllowed,
+    shouldCancel = () => false,
     sleepFor = sleep,
     now = Date.now,
     checkIntervalMs = 500,
@@ -54,6 +57,9 @@ export async function waitForCastDelay(durationMs, {
 
     while (true) {
         assertAllowed();
+        if (shouldCancel()) {
+            return;
+        }
         const remainingMs = deadline - now();
 
         if (remainingMs <= 0) {
@@ -138,17 +144,23 @@ export class FishingFeature {
         const castButton = await this.session.getReadyCastButton();
 
         if (castButton) {
-            const delay = selectCastDelay(settings.features.fishing);
+            const competition = this.session.getActiveCompetition?.();
+            const delay = selectCastDelay(settings.features.fishing, {
+                competitionActive: Boolean(competition),
+            });
 
             await this.reporter.update({
                 level: 'running',
                 phase: 'fishing',
                 target: '点击抛竿按钮',
-                message: `抛竿按钮已可用，本次${delay.label}，等待 ${delay.durationMs}ms 后点击。`,
+                message: `抛竿按钮已可用，${competition ? `${competition.type === 'guild-tournament' ? '公会锦标赛' : '个人赛事'}期间` : ''}本次${delay.label}，等待 ${delay.durationMs}ms 后点击。`,
             }, { record: false });
             await waitForCastDelay(delay.durationMs, {
                 assertAllowed: () =>
                     this.session.assertAutomationAllowed(),
+                shouldCancel: () =>
+                    delay.label === '较长停顿' &&
+                    Boolean(this.session.getActiveCompetition?.()),
             });
 
             const latestSettings = this.settings.get();

@@ -29,7 +29,16 @@ try {
 
     let observedCast = null;
     const session = new ArcaneAnglerPage({
-        page: { on: () => {} },
+        page: {
+            on: () => {},
+            evaluate: async () => ({
+                biomeId: '2',
+                biomeName: 'Moonlit Marsh',
+                baitId: 'bait-2',
+                baitName: 'Glow Worm',
+                baitPrice: 10,
+            }),
+        },
         config: {},
         reporter: { log: async () => {} },
         shouldStop: () => false,
@@ -43,10 +52,25 @@ try {
         ok: () => true,
         json: async () => ({
             success: true,
-            result: { goldGained: 5 },
+            result: {
+                goldGained: 5,
+                currentBiome: 2,
+                equippedBait: 'bait-2',
+                baitQuantity: 87,
+            },
         }),
     });
-    assert.deepEqual(observedCast, { goldGained: 5 });
+    assert.deepEqual(observedCast, {
+        goldGained: 5,
+        currentBiome: 2,
+        equippedBait: 'bait-2',
+        baitQuantity: 87,
+    });
+    const knownBait = session.getKnownBaitQuantity('bait-2');
+
+    assert.equal(knownBait.quantity, 87);
+    assert.equal(knownBait.equipped, true);
+    assert.ok(Date.parse(knownBait.observedAt));
 
     const contextSession = new ArcaneAnglerPage({
         page: {

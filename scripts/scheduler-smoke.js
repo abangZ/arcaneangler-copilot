@@ -74,8 +74,8 @@ const quietScheduler = new OperationScheduler(config, {
 gate = quietScheduler.evaluate();
 assert.equal(gate.allowed, false);
 assert.equal(gate.mode, OPERATION_STATES.QUIET);
-assert.equal(gate.resumeAt.getHours(), 8);
-assert.equal(gate.waitMs, 8 * 60 * 60 * 1_000);
+assert.equal(gate.resumeAt.getHours(), 9);
+assert.equal(gate.waitMs, 9 * 60 * 60 * 1_000);
 assert.equal(quietScheduler.canOperateNow(), false);
 
 quietNow = new Date(2026, 6, 15, 7, 59, 59, 0);
@@ -84,6 +84,12 @@ assert.equal(gate.mode, OPERATION_STATES.QUIET);
 assert.equal(gate.transitioned, false);
 
 quietNow = new Date(2026, 6, 15, 8, 0, 0, 0);
+gate = quietScheduler.evaluate();
+assert.equal(gate.allowed, false);
+assert.equal(gate.mode, OPERATION_STATES.QUIET);
+assert.equal(gate.resumeAt.getHours(), 9);
+
+quietNow = new Date(2026, 6, 15, 9, 0, 0, 0);
 gate = quietScheduler.evaluate();
 assert.equal(gate.allowed, true);
 assert.equal(gate.mode, OPERATION_STATES.ACTIVE);
@@ -117,8 +123,78 @@ assert.equal(gate.quietEndHour, 10);
 
 quietScheduler.updateConfig(config);
 
+let competitionNow = new Date(2026, 6, 16, 10, 0, 0, 0);
+const competitionScheduler = new OperationScheduler(config, {
+    now: () => new Date(competitionNow),
+    random: min => min,
+});
+const overlappingCompetitions = [
+    {
+        type: 'derby',
+        id: '17',
+        number: 17,
+        biomeId: 2,
+        startAt: '2026-07-16T02:30:00.000Z',
+        endAt: '2026-07-16T03:30:00.000Z',
+    },
+    {
+        type: 'guild-tournament',
+        id: '226',
+        number: 226,
+        biomeId: 4,
+        startAt: '2026-07-16T02:30:00.000Z',
+        endAt: '2026-07-16T03:30:00.000Z',
+    },
+];
+
+gate = competitionScheduler.evaluate();
+assert.equal(gate.mode, OPERATION_STATES.ACTIVE);
+competitionNow = new Date(2026, 6, 16, 10, 40, 0, 0);
+gate = competitionScheduler.evaluate({
+    competitions: overlappingCompetitions,
+});
+assert.equal(gate.allowed, true);
+assert.equal(gate.mode, OPERATION_STATES.COMPETITION);
+assert.equal(gate.competition.type, 'guild-tournament');
+assert.equal(gate.competition.biomeId, 4);
+assert.equal(competitionScheduler.canOperateNow(), true);
+
+competitionNow = new Date(2026, 6, 16, 11, 30, 0, 0);
+gate = competitionScheduler.evaluate({
+    competitions: overlappingCompetitions,
+});
+assert.equal(gate.allowed, false);
+assert.equal(gate.mode, OPERATION_STATES.REST);
+assert.equal(gate.durationMinutes, 5);
+
+let nightNow = new Date(2026, 6, 17, 0, 30, 0, 0);
+const nightScheduler = new OperationScheduler(config, {
+    now: () => new Date(nightNow),
+    random: min => min,
+});
+const nightCompetitions = [{
+    type: 'guild-tournament',
+    id: 'night-1',
+    number: 301,
+    biomeId: 6,
+    startAt: '2026-07-16T17:00:00.000Z',
+    endAt: '2026-07-16T18:00:00.000Z',
+}];
+
+gate = nightScheduler.evaluate({ competitions: nightCompetitions });
+assert.equal(gate.mode, OPERATION_STATES.QUIET);
+nightNow = new Date(2026, 6, 17, 1, 0, 0, 0);
+gate = nightScheduler.evaluate({ competitions: nightCompetitions });
+assert.equal(gate.mode, OPERATION_STATES.COMPETITION);
+assert.equal(gate.allowed, true);
+nightNow = new Date(2026, 6, 17, 2, 0, 0, 0);
+gate = nightScheduler.evaluate({ competitions: nightCompetitions });
+assert.equal(gate.mode, OPERATION_STATES.QUIET);
+assert.equal(gate.resumeAt.getHours(), 9);
+
 let lifecycleNow = new Date(2026, 6, 16, 1, 0, 0, 0);
 const lifecycleEvents = [];
+let lifecycleCompetitions = [];
 const lifecycleScheduler = new OperationScheduler(config, {
     now: () => new Date(lifecycleNow),
     random: min => min,
@@ -142,6 +218,7 @@ const engine = new AutomationEngine({
     },
     session: {
         bootstrap: async () => lifecycleEvents.push('bootstrap'),
+        getCompetitionSchedule: () => lifecycleCompetitions,
     },
     browserLifecycle: {
         suspend: async () => lifecycleEvents.push('suspend'),
@@ -181,6 +258,35 @@ assert.equal(
 
 lifecycleNow = new Date(2026, 6, 16, 8, 0, 0, 0);
 await engine.runCycle();
+assert.equal(lifecycleEvents.at(-1), `wait:${OPERATION_STATES.QUIET}`);
+
+lifecycleCompetitions = [{
+    type: 'guild-tournament',
+    id: 'night-engine',
+    number: 302,
+    biomeId: 7,
+    startAt: '2026-07-16T00:00:00.000Z',
+    endAt: '2026-07-16T00:30:00.000Z',
+}];
+await engine.runCycle();
+assert.deepEqual(lifecycleEvents.slice(-5), [
+    'resume',
+    'bootstrap',
+    'snapshot',
+    'reset',
+    'tick',
+]);
+
+lifecycleNow = new Date(2026, 6, 16, 8, 30, 0, 0);
+await engine.runCycle();
+assert.deepEqual(lifecycleEvents.slice(-3), [
+    'suspend',
+    'reset',
+    `wait:${OPERATION_STATES.QUIET}`,
+]);
+
+lifecycleNow = new Date(2026, 6, 16, 9, 0, 0, 0);
+await engine.runCycle();
 assert.deepEqual(lifecycleEvents.slice(-5), [
     'resume',
     'bootstrap',
@@ -190,5 +296,5 @@ assert.deepEqual(lifecycleEvents.slice(-5), [
 ]);
 
 console.log(
-    'Scheduler smoke passed: state transitions, quiet browser suspend/resume and active/rest ranges work.',
+    'Scheduler smoke passed: competition priority, deferred rest, night wakeup and delayed morning resume work.',
 );

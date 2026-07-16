@@ -112,7 +112,21 @@
                             </dl>
                             <div class="derby-summary">
                                 <div class="derby-heading">
-                                    <span class="eyebrow">比赛</span>
+                                    <span class="eyebrow">公会锦标赛</span>
+                                    <span id="tournament-status" class="status-pill">暂无</span>
+                                </div>
+                                <strong id="tournament-title">暂无已参与锦标赛</strong>
+                                <dl class="detail-list derby-detail-list">
+                                    <div><dt id="tournament-time-label">开始时间</dt><dd id="tournament-time">—</dd></div>
+                                    <div><dt>比赛地图</dt><dd id="tournament-biome">—</dd></div>
+                                    <div id="tournament-standing-row" hidden><dt>公会排名</dt><dd id="tournament-standing">—</dd></div>
+                                    <div id="tournament-progress-row" hidden><dt>公会进度</dt><dd id="tournament-progress">—</dd></div>
+                                    <div id="tournament-participants-row" hidden><dt>参赛公会</dt><dd id="tournament-participants">—</dd></div>
+                                </dl>
+                            </div>
+                            <div class="derby-summary">
+                                <div class="derby-heading">
+                                    <span class="eyebrow">个人 Derby</span>
                                     <span id="derby-status" class="status-pill">暂无</span>
                                 </div>
                                 <strong id="derby-title">暂无已参与赛事</strong>
@@ -323,7 +337,8 @@
                     <details open>
                         <summary>地图与 Events</summary>
                         <div class="form-grid details-content">
-                            <label><span>地图模式</span><select id="map-mode"><option value="off">关闭</option><option value="fixed">固定地图</option><option value="auto">自动选择</option></select></label>
+                            <label><span>自动切地图</span><select id="map-mode"><option value="off">关闭</option><option value="fixed">固定地图</option><option value="auto">自动选择</option></select></label>
+                            <label class="toggle-row"><span>优先公会锦标赛</span><input id="prioritize-tournament" type="checkbox"></label>
                             <label><span>目标 Biome</span><input id="target-biome" type="number" min="1" max="999" placeholder="固定模式必填"></label>
                             <label><span>检查间隔（分钟）</span><input id="map-check-minutes" type="number" min="1" max="1440" required></label>
                         </div>

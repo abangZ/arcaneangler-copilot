@@ -58,6 +58,20 @@ function createFakeWorker() {
                     name: 'Lake Minnow',
                     price: 15,
                 },
+                tournament: {
+                    status: 'active',
+                    id: '226',
+                    number: 226,
+                    type: 'normal',
+                    biome: { id: '12', name: 'Map 12' },
+                    endAt: '2026-07-16T02:30:00.000Z',
+                    participantCount: 8,
+                    standing: {
+                        rank: 2,
+                        points: 15_000,
+                        fishCaught: 19,
+                    },
+                },
                 derby: {
                     status: 'active',
                     id: '8',
@@ -149,6 +163,11 @@ try {
         statsStore.initialize(),
     ]);
     assert.equal(settingsStore.get().configured, false);
+    assert.equal(settingsStore.get().settings.features.map.mode, 'auto');
+    assert.equal(
+        settingsStore.get().settings.features.map.prioritizeTournament,
+        true,
+    );
     assert.throws(() => validateSettings({}), SettingsValidationError);
 
     const concurrentStore = new SettingsStore({
@@ -219,6 +238,7 @@ try {
         assert.match(pageHtml, /data-view="stats"/);
         assert.match(pageHtml, /data-view="logs"/);
         assert.match(pageHtml, /id="settings-view"/);
+        assert.match(pageHtml, /id="prioritize-tournament"/);
         assert.match(pageHtml, /id="current-bait-name"/);
         assert.match(pageHtml, /id="current-bait-fish-gold"/);
         assert.match(pageHtml, /id="current-bait-rarity-list"/);
@@ -226,6 +246,8 @@ try {
         assert.match(pageHtml, /id="last-fish-name"/);
         assert.match(pageHtml, /id="derby-title"/);
         assert.match(pageHtml, /id="derby-standing"/);
+        assert.match(pageHtml, /id="tournament-title"/);
+        assert.match(pageHtml, /id="tournament-progress"/);
         assert.doesNotMatch(pageHtml, /id="last-fish-rarity"/);
         assert.doesNotMatch(pageHtml, />最后一条鱼</);
         assert.match(pageHtml, /id="verification-history"/);
@@ -238,6 +260,7 @@ try {
         assert.match(appSource, /const RARITY_DISPLAY/);
         assert.match(appSource, /function estimateLevelUp/);
         assert.match(appSource, /const DERBY_TYPE_LABELS/);
+        assert.match(appSource, /competition: '比赛'/);
         assert.match(appSource, /保存并进入控制台/);
 
         result = await login(
@@ -394,6 +417,22 @@ try {
             await page.locator('#start-button').click();
             assert.equal((await startResponse).status(), 200);
             await page.locator('#stop-button').waitFor({ state: 'visible' });
+            await page.waitForFunction(() =>
+                document.getElementById('tournament-title')?.textContent ===
+                    '锦标赛 #226 · 普通赛',
+            );
+            assert.equal(
+                await page.locator('#tournament-status').textContent(),
+                '进行中',
+            );
+            assert.equal(
+                await page.locator('#tournament-standing').textContent(),
+                '#2',
+            );
+            assert.equal(
+                await page.locator('#tournament-progress').textContent(),
+                '15,000 分 · 19 条鱼',
+            );
             await page.waitForFunction(() =>
                 document.getElementById('derby-title')?.textContent ===
                     'Derby #41 · 全球赛',

@@ -88,6 +88,17 @@ assert.deepEqual(
         label: '常规延迟',
     },
 );
+assert.deepEqual(
+    selectCastDelay(settings, {
+        chance: () => 0,
+        integer: (_min, max) => max,
+        competitionActive: true,
+    }),
+    {
+        durationMs: 10_000,
+        label: '短暂停顿',
+    },
+);
 
 let currentTime = 1_000;
 let gateChecks = 0;
@@ -107,6 +118,19 @@ await waitForCastDelay(1_200, {
 assert.deepEqual(sleepChunks, [500, 500, 200]);
 assert.equal(gateChecks, 4);
 
+currentTime = 1_000;
+const cancelledSleepChunks = [];
+await waitForCastDelay(20_000, {
+    assertAllowed: () => {},
+    shouldCancel: () => currentTime >= 1_500,
+    sleepFor: async milliseconds => {
+        cancelledSleepChunks.push(milliseconds);
+        currentTime += milliseconds;
+    },
+    now: () => currentTime,
+});
+assert.deepEqual(cancelledSleepChunks, [500]);
+
 const tempDirectory = await fs.mkdtemp(path.join(
     os.tmpdir(),
     'arcane-fishing-smoke-',
@@ -118,6 +142,7 @@ try {
 
     legacySettings.features.fishing.clickDelayMinMs = 250;
     legacySettings.features.fishing.clickDelayMaxMs = 800;
+    delete legacySettings.features.map.prioritizeTournament;
     await fs.writeFile(filePath, JSON.stringify({
         version: SETTINGS_VERSION,
         configured: true,
@@ -131,12 +156,20 @@ try {
     assert.equal(snapshot.revision, 7);
     assert.equal(snapshot.settings.features.fishing.clickDelayMinMs, 500);
     assert.equal(snapshot.settings.features.fishing.clickDelayMaxMs, 2_000);
+    assert.equal(
+        snapshot.settings.features.map.prioritizeTournament,
+        true,
+    );
 
     const persisted = JSON.parse(await fs.readFile(filePath, 'utf8'));
 
     assert.equal(persisted.revision, 7);
     assert.equal(persisted.settings.features.fishing.clickDelayMinMs, 500);
     assert.equal(persisted.settings.features.fishing.clickDelayMaxMs, 2_000);
+    assert.equal(
+        persisted.settings.features.map.prioritizeTournament,
+        true,
+    );
 
     const customSettings = structuredClone(DEFAULT_SETTINGS);
 
@@ -165,5 +198,5 @@ try {
 }
 
 console.log(
-    'Fishing smoke passed: delay tiers, defaults and legacy migration work.',
+    'Fishing smoke passed: delay tiers, competition override, defaults and legacy migration work.',
 );

@@ -14,19 +14,28 @@ function clone(value) {
 
 function migrateLegacyDefaults(settings) {
     const fishing = settings?.features?.fishing;
+    const map = settings?.features?.map;
+    let migrated = settings;
 
     if (
-        fishing?.clickDelayMinMs !== 250 ||
-        fishing?.clickDelayMaxMs !== 800
+        fishing?.clickDelayMinMs === 250 &&
+        fishing?.clickDelayMaxMs === 800
     ) {
-        return settings;
+        migrated = clone(settings);
+        migrated.features.fishing.clickDelayMinMs =
+            DEFAULT_SETTINGS.features.fishing.clickDelayMinMs;
+        migrated.features.fishing.clickDelayMaxMs =
+            DEFAULT_SETTINGS.features.fishing.clickDelayMaxMs;
     }
 
-    const migrated = clone(settings);
-    migrated.features.fishing.clickDelayMinMs =
-        DEFAULT_SETTINGS.features.fishing.clickDelayMinMs;
-    migrated.features.fishing.clickDelayMaxMs =
-        DEFAULT_SETTINGS.features.fishing.clickDelayMaxMs;
+    if (map && typeof map.prioritizeTournament !== 'boolean') {
+        if (migrated === settings) {
+            migrated = clone(settings);
+        }
+
+        migrated.features.map.prioritizeTournament = true;
+    }
+
     return migrated;
 }
 

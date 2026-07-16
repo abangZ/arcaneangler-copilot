@@ -26,6 +26,7 @@ export class AutomationEngine {
         this.browserSuspended = false;
         this.pageSetupInProgress = false;
         this.scheduleMode = null;
+        this.activeCompetition = null;
     }
 
     register(feature) {
@@ -49,6 +50,7 @@ export class AutomationEngine {
             pageReady: this.started,
             stopping: this.stopRequested,
             consecutiveErrors: this.consecutiveErrors,
+            competition: this.activeCompetition,
         };
     }
 
@@ -110,7 +112,7 @@ export class AutomationEngine {
             ? '等待夜间停挂机结束'
             : '挂机休息中';
         const message = isQuiet
-            ? `本地时间 ${String(gate.quietStartHour).padStart(2, '0')}:00-${String(gate.quietEndHour).padStart(2, '0')}:00 不执行自动操作，将于 ${this.formatLocalTime(gate.resumeAt)} 恢复。`
+            ? `本地时间 ${String(gate.quietStartHour).padStart(2, '0')}:00 起进入夜间休息；已参与赛事会按记录的开始时间临时唤醒，常规挂机将于 ${this.formatLocalTime(gate.resumeAt)} 恢复。`
             : `本轮休息 ${gate.durationMinutes} 分钟，将于 ${this.formatLocalTime(gate.resumeAt)} 恢复。`;
 
         await this.reporter.update({
@@ -137,13 +139,15 @@ export class AutomationEngine {
         this.resetFeatures();
     }
 
-    async resumeBrowserAfterQuiet() {
+    async resumeBrowserAfterQuiet(competition = null) {
         await this.reporter.update({
             level: 'running',
             phase: 'schedule',
-            target: '恢复挂机页面',
+            target: competition ? `参与${competition.label}` : '恢复挂机页面',
             activeFeature: '挂机调度',
-            message: '夜间停挂机已结束，正在重新创建 Playwright 页面。',
+            message: competition
+                ? `${competition.label} #${competition.number || competition.id} 已开始，正在重新创建 Playwright 页面并进入 Biome ${competition.biomeId}。`
+                : '夜间休息已结束，正在重新创建 Playwright 页面。',
         });
         await this.browserLifecycle.resume();
         this.browserSuspended = false;
@@ -181,10 +185,12 @@ export class AutomationEngine {
         );
         const gate = this.scheduler.evaluate({
             enabled: settings.automationEnabled && enabledFeatures.length > 0,
+            competitions: this.session.getCompetitionSchedule?.() || [],
         });
         const previousMode = this.scheduleMode;
 
         this.scheduleMode = gate.mode;
+        this.activeCompetition = gate.competition || null;
 
         if (gate.mode === OPERATION_STATES.QUIET) {
             if (gate.transitioned || !this.browserSuspended) {
@@ -201,7 +207,7 @@ export class AutomationEngine {
         }
 
         if (this.browserSuspended) {
-            await this.resumeBrowserAfterQuiet();
+            await this.resumeBrowserAfterQuiet(gate.competition);
         }
 
         if (this.started && this.session.isClosed?.()) {
@@ -242,13 +248,23 @@ export class AutomationEngine {
                 await this.ensureStarted();
             }
 
-            await this.reporter.update({
-                level: 'running',
-                phase: 'schedule',
-                target: '本轮挂机运行中',
-                activeFeature: '挂机调度',
-                message: `本轮计划运行 ${gate.durationMinutes} 分钟，预计于 ${this.formatLocalTime(gate.until)} 休息。`,
-            });
+            if (gate.mode === OPERATION_STATES.COMPETITION) {
+                await this.reporter.update({
+                    level: 'running',
+                    phase: 'schedule',
+                    target: `正在参与${gate.competition.label}`,
+                    activeFeature: '赛事调度',
+                    message: `${gate.competition.label} #${gate.competition.number || gate.competition.id} 优先运行至 ${this.formatLocalTime(gate.until)}；期间不进入长暂停或挂机休息。`,
+                });
+            } else {
+                await this.reporter.update({
+                    level: 'running',
+                    phase: 'schedule',
+                    target: '本轮挂机运行中',
+                    activeFeature: '挂机调度',
+                    message: `本轮计划运行 ${gate.durationMinutes} 分钟，预计于 ${this.formatLocalTime(gate.until)} 休息。`,
+                });
+            }
         } else if (!this.started) {
             await this.ensureStarted();
         } else if (previousMode !== OPERATION_STATES.ACTIVE) {

@@ -19,6 +19,11 @@ const elementIds = [
     'current-bait-rarity-list',
     'player-level', 'player-xp-percent', 'player-xp-bar', 'player-xp-text',
     'level-eta', 'current-biome', 'current-biome-effect',
+    'tournament-status', 'tournament-title', 'tournament-time-label',
+    'tournament-time', 'tournament-biome', 'tournament-standing-row',
+    'tournament-standing', 'tournament-progress-row',
+    'tournament-progress', 'tournament-participants-row',
+    'tournament-participants',
     'derby-status', 'derby-title', 'derby-time-label', 'derby-time',
     'derby-biome', 'derby-standing-row', 'derby-standing',
     'derby-participants-row', 'derby-participants',
@@ -39,7 +44,8 @@ const elementIds = [
     'settings-back', 'load-error-warning', 'settings-form',
     'settings-revision', 'settings-note', 'save-settings', 'character',
     'headless', 'fishing-enabled', 'classic-mode', 'click-delay-min',
-    'click-delay-max', 'map-mode', 'target-biome', 'map-check-minutes',
+    'click-delay-max', 'map-mode', 'prioritize-tournament',
+    'target-biome', 'map-check-minutes',
     'bait-enabled', 'bait-tier', 'bait-threshold', 'bait-quantity',
     'bait-check-seconds', 'active-min', 'active-max', 'rest-min',
     'rest-max', 'quiet-start', 'quiet-end', 'verification-enabled',
@@ -85,6 +91,7 @@ const BROWSER_LABELS = {
 const SCHEDULE_LABELS = {
     idle: '空闲',
     active: '运行',
+    competition: '比赛',
     rest: '休息',
     quiet: '夜间停机',
     disabled: '无启用功能',
@@ -124,6 +131,7 @@ const DERBY_TYPE_LABELS = Object.freeze({
     global: '全球赛',
     ironman: '铁人赛',
 });
+const TOURNAMENT_TYPE_LABELS = DERBY_TYPE_LABELS;
 
 function base64UrlToBytes(value) {
     const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
@@ -460,6 +468,8 @@ function fillSettings(snapshot) {
     elements['click-delay-min'].value = settings.features.fishing.clickDelayMinMs;
     elements['click-delay-max'].value = settings.features.fishing.clickDelayMaxMs;
     elements['map-mode'].value = settings.features.map.mode;
+    elements['prioritize-tournament'].checked =
+        settings.features.map.prioritizeTournament;
     elements['target-biome'].value = settings.features.map.targetBiomeId || '';
     elements['map-check-minutes'].value = settings.features.map.checkIntervalMs / 60_000;
     elements['bait-enabled'].checked = settings.features.bait.enabled;
@@ -513,6 +523,8 @@ function collectSettings() {
             },
             map: {
                 mode: mapMode,
+                prioritizeTournament:
+                    elements['prioritize-tournament'].checked,
                 targetBiomeId: mapMode === 'fixed'
                     ? integer('target-biome')
                     : null,
@@ -771,6 +783,78 @@ function renderOverview() {
             ? `经验 ${xpBonus >= 0 ? '+' : ''}${formatNumber(xpBonus)}%`
             : null,
     ].filter(Boolean).join(' · ') || '—';
+
+    const tournament = dashboard?.tournament;
+    const tournamentActive = tournament?.status === 'active';
+    const tournamentType = TOURNAMENT_TYPE_LABELS[tournament?.type] ||
+        tournament?.type;
+    const tournamentNumber = tournament?.number || tournament?.id;
+
+    elements['tournament-status'].textContent = tournament
+        ? tournamentActive ? '进行中' : '等待开始'
+        : '暂无';
+    elements['tournament-status'].className = tournament
+        ? `status-pill ${tournamentActive ? 'running' : 'waiting'}`
+        : 'status-pill';
+    elements['tournament-title'].textContent = tournament
+        ? [
+            tournamentNumber ? `锦标赛 #${tournamentNumber}` : '锦标赛',
+            tournamentType,
+        ].filter(Boolean).join(' · ')
+        : '暂无已参与锦标赛';
+    elements['tournament-time-label'].textContent = tournamentActive
+        ? '结束时间'
+        : '开始时间';
+    elements['tournament-time'].textContent = tournament
+        ? formatFullDate(
+            tournamentActive ? tournament.endAt : tournament.startAt,
+        )
+        : '—';
+    elements['tournament-biome'].textContent = tournament?.biome
+        ? `${tournament.biome.name} · B${tournament.biome.id}`
+        : '—';
+    const tournamentRank = Number(tournament?.standing?.rank);
+    const tournamentPoints = Number(tournament?.standing?.points);
+    const tournamentFishCaught = Number(
+        tournament?.standing?.fishCaught,
+    );
+    const hasTournamentStanding = tournamentActive &&
+        Number.isSafeInteger(tournamentRank) && tournamentRank > 0;
+    const hasTournamentPoints = tournament?.standing?.points != null &&
+        Number.isFinite(tournamentPoints);
+    const hasTournamentFish = tournament?.standing?.fishCaught != null &&
+        Number.isFinite(tournamentFishCaught);
+    const hasTournamentProgress = hasTournamentStanding &&
+        (hasTournamentPoints || hasTournamentFish);
+
+    elements['tournament-standing-row'].hidden = !hasTournamentStanding;
+    elements['tournament-standing'].textContent = hasTournamentStanding
+        ? `#${formatNumber(tournamentRank, 0)}`
+        : '—';
+    elements['tournament-progress-row'].hidden = !hasTournamentProgress;
+    elements['tournament-progress'].textContent = hasTournamentProgress
+        ? [
+            hasTournamentPoints
+                ? `${formatNumber(tournamentPoints)} 分`
+                : null,
+            hasTournamentFish
+                ? `${formatNumber(tournamentFishCaught, 0)} 条鱼`
+                : null,
+        ].filter(Boolean).join(' · ')
+        : '—';
+    const tournamentParticipantCount = Number(
+        tournament?.participantCount,
+    );
+    const hasTournamentParticipants =
+        tournament?.participantCount != null &&
+        Number.isFinite(tournamentParticipantCount);
+
+    elements['tournament-participants-row'].hidden =
+        !hasTournamentParticipants;
+    elements['tournament-participants'].textContent =
+        hasTournamentParticipants
+            ? formatNumber(tournamentParticipantCount, 0)
+            : '—';
 
     const derby = dashboard?.derby;
     const derbyActive = derby?.status === 'active';

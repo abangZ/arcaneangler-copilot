@@ -1,10 +1,16 @@
 import { randomInteger } from './browser-utils.js';
+import {
+    COMPETITION_TYPES,
+    findActiveCompetition,
+} from './competition-schedule.js';
 
 const MINUTE_MS = 60_000;
+export const QUIET_RESUME_DELAY_MINUTES = 60;
 
 export const OPERATION_STATES = Object.freeze({
     IDLE: 'idle',
     ACTIVE: 'active',
+    COMPETITION: 'competition',
     REST: 'rest',
     QUIET: 'quiet',
     DISABLED: 'disabled',
@@ -33,6 +39,9 @@ export class OperationScheduler {
         this.activeUntil = 0;
         this.restUntil = 0;
         this.restDurationMinutes = 0;
+        this.competitionId = null;
+        this.competitionUntil = 0;
+        this.deferredRest = false;
     }
 
     updateConfig(config) {
@@ -53,9 +62,12 @@ export class OperationScheduler {
         this.activeUntil = 0;
         this.restUntil = 0;
         this.restDurationMinutes = 0;
+        this.competitionId = null;
+        this.competitionUntil = 0;
+        this.deferredRest = false;
     }
 
-    isQuietTime(date = this.now()) {
+    isBaseQuietTime(date = this.now()) {
         const hour = date.getHours();
         const { quietStartHour, quietEndHour } = this.config;
 
@@ -66,7 +78,41 @@ export class OperationScheduler {
         return hour >= quietStartHour || hour < quietEndHour;
     }
 
+    getPreviousQuietEnd(date = this.now()) {
+        const quietEnd = new Date(date);
+
+        quietEnd.setHours(this.config.quietEndHour, 0, 0, 0);
+        if (quietEnd.getTime() > date.getTime()) {
+            quietEnd.setDate(quietEnd.getDate() - 1);
+        }
+
+        return quietEnd;
+    }
+
+    isQuietResumeDelay(date = this.now()) {
+        if (this.isBaseQuietTime(date)) {
+            return false;
+        }
+
+        const quietEnd = this.getPreviousQuietEnd(date);
+        const delayedResumeAt = quietEnd.getTime() +
+            QUIET_RESUME_DELAY_MINUTES * MINUTE_MS;
+
+        return date.getTime() < delayedResumeAt;
+    }
+
+    isQuietTime(date = this.now()) {
+        return this.isBaseQuietTime(date) || this.isQuietResumeDelay(date);
+    }
+
     getQuietEnd(date = this.now()) {
+        if (this.isQuietResumeDelay(date)) {
+            return new Date(
+                this.getPreviousQuietEnd(date).getTime() +
+                QUIET_RESUME_DELAY_MINUTES * MINUTE_MS,
+            );
+        }
+
         const quietEnd = new Date(date);
         quietEnd.setHours(this.config.quietEndHour, 0, 0, 0);
 
@@ -74,16 +120,25 @@ export class OperationScheduler {
             quietEnd.setDate(quietEnd.getDate() + 1);
         }
 
-        return quietEnd;
+        return new Date(
+            quietEnd.getTime() +
+            QUIET_RESUME_DELAY_MINUTES * MINUTE_MS,
+        );
     }
 
     canOperateNow() {
         const now = this.now();
 
         return (
-            this.mode === OPERATION_STATES.ACTIVE &&
-            !this.isQuietTime(now) &&
-            now.getTime() < this.activeUntil
+            (
+                this.mode === OPERATION_STATES.ACTIVE &&
+                !this.isQuietTime(now) &&
+                now.getTime() < this.activeUntil
+            ) ||
+            (
+                this.mode === OPERATION_STATES.COMPETITION &&
+                now.getTime() < this.competitionUntil
+            )
         );
     }
 
@@ -97,6 +152,9 @@ export class OperationScheduler {
         this.activeUntil = now.getTime() + durationMinutes * MINUTE_MS;
         this.restUntil = 0;
         this.restDurationMinutes = 0;
+        this.competitionId = null;
+        this.competitionUntil = 0;
+        this.deferredRest = false;
 
         return {
             allowed: true,
@@ -119,6 +177,9 @@ export class OperationScheduler {
         this.activeUntil = 0;
         this.restUntil = now.getTime() + durationMinutes * MINUTE_MS;
         this.restDurationMinutes = durationMinutes;
+        this.competitionId = null;
+        this.competitionUntil = 0;
+        this.deferredRest = false;
 
         return {
             allowed: false,
@@ -130,9 +191,88 @@ export class OperationScheduler {
         };
     }
 
-    evaluate({ enabled = true } = {}) {
+    startCompetition(now, competition) {
+        const competitionId = `${competition.type}:${competition.id}`;
+        const transitioned =
+            this.mode !== OPERATION_STATES.COMPETITION ||
+            this.competitionId !== competitionId;
+
+        if (this.mode === OPERATION_STATES.REST) {
+            this.deferredRest = true;
+        }
+
+        if (
+            this.activeUntil > 0 &&
+            now.getTime() >= this.activeUntil
+        ) {
+            this.deferredRest = true;
+        }
+
+        this.mode = OPERATION_STATES.COMPETITION;
+        this.competitionId = competitionId;
+        this.competitionUntil = Date.parse(competition.endAt);
+
+        const label = competition.type ===
+            COMPETITION_TYPES.GUILD_TOURNAMENT
+            ? '公会锦标赛'
+            : '个人 Derby';
+
+        return {
+            allowed: true,
+            mode: OPERATION_STATES.COMPETITION,
+            transitioned,
+            competition: {
+                ...competition,
+                label,
+            },
+            until: new Date(this.competitionUntil),
+            waitMs: 0,
+        };
+    }
+
+    resumeAfterCompetition(now) {
+        this.competitionId = null;
+        this.competitionUntil = 0;
+
+        if (
+            this.deferredRest ||
+            (this.activeUntil > 0 && now.getTime() >= this.activeUntil)
+        ) {
+            return this.startRest(now);
+        }
+
+        if (this.activeUntil > now.getTime()) {
+            const durationMinutes = Math.max(
+                1,
+                Math.ceil((this.activeUntil - now.getTime()) / MINUTE_MS),
+            );
+
+            this.mode = OPERATION_STATES.ACTIVE;
+            this.deferredRest = false;
+            return {
+                allowed: true,
+                mode: OPERATION_STATES.ACTIVE,
+                transitioned: true,
+                resumedFrom: OPERATION_STATES.COMPETITION,
+                durationMinutes,
+                until: new Date(this.activeUntil),
+                waitMs: 0,
+            };
+        }
+
+        return this.startActive(now, OPERATION_STATES.COMPETITION);
+    }
+
+    evaluate({ enabled = true, competitions = [] } = {}) {
         const now = this.now();
         const nowMs = now.getTime();
+        const activeCompetition = enabled
+            ? findActiveCompetition(competitions, now)
+            : null;
+
+        if (activeCompetition) {
+            return this.startCompetition(now, activeCompetition);
+        }
 
         if (this.isQuietTime(now)) {
             const transitioned = this.mode !== OPERATION_STATES.QUIET;
@@ -142,6 +282,9 @@ export class OperationScheduler {
             this.activeUntil = 0;
             this.restUntil = 0;
             this.restDurationMinutes = 0;
+            this.competitionId = null;
+            this.competitionUntil = 0;
+            this.deferredRest = false;
 
             return {
                 allowed: false,
@@ -161,6 +304,9 @@ export class OperationScheduler {
             this.activeUntil = 0;
             this.restUntil = 0;
             this.restDurationMinutes = 0;
+            this.competitionId = null;
+            this.competitionUntil = 0;
+            this.deferredRest = false;
 
             return {
                 allowed: false,
@@ -168,6 +314,10 @@ export class OperationScheduler {
                 transitioned,
                 waitMs: 500,
             };
+        }
+
+        if (this.mode === OPERATION_STATES.COMPETITION) {
+            return this.resumeAfterCompetition(now);
         }
 
         if (this.mode === OPERATION_STATES.REST) {
