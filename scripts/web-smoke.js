@@ -58,6 +58,25 @@ function createFakeWorker() {
                     name: 'Lake Minnow',
                     price: 15,
                 },
+                worldBoss: {
+                    status: 'active',
+                    id: 'event-9',
+                    name: 'Abyssal Maw',
+                    endAt: '2026-07-16T04:00:00.000Z',
+                    hp: {
+                        current: 10_000,
+                        max: 30_000,
+                        percentage: 33.3,
+                    },
+                    weakness: { primary: 'intelligence' },
+                    participantCount: 12,
+                    activeParticipantCount: 7,
+                    standing: {
+                        rank: 2,
+                        damage: 3_000,
+                        attacks: 2,
+                    },
+                },
                 tournament: {
                     status: 'active',
                     id: '226',
@@ -168,6 +187,10 @@ try {
         settingsStore.get().settings.features.map.prioritizeTournament,
         true,
     );
+    assert.equal(
+        settingsStore.get().settings.features.worldBoss.enabled,
+        true,
+    );
     assert.throws(() => validateSettings({}), SettingsValidationError);
 
     const concurrentStore = new SettingsStore({
@@ -239,6 +262,7 @@ try {
         assert.match(pageHtml, /data-view="logs"/);
         assert.match(pageHtml, /id="settings-view"/);
         assert.match(pageHtml, /id="prioritize-tournament"/);
+        assert.match(pageHtml, /id="world-boss-enabled"/);
         assert.match(pageHtml, /id="current-bait-name"/);
         assert.match(pageHtml, /id="current-bait-fish-gold"/);
         assert.match(pageHtml, /id="current-bait-rarity-list"/);
@@ -248,6 +272,8 @@ try {
         assert.match(pageHtml, /id="derby-standing"/);
         assert.match(pageHtml, /id="tournament-title"/);
         assert.match(pageHtml, /id="tournament-progress"/);
+        assert.match(pageHtml, /id="world-boss-title"/);
+        assert.match(pageHtml, /id="world-boss-standing"/);
         assert.doesNotMatch(pageHtml, /id="last-fish-rarity"/);
         assert.doesNotMatch(pageHtml, />最后一条鱼</);
         assert.match(pageHtml, /id="verification-history"/);
@@ -260,6 +286,7 @@ try {
         assert.match(appSource, /const RARITY_DISPLAY/);
         assert.match(appSource, /function estimateLevelUp/);
         assert.match(appSource, /const DERBY_TYPE_LABELS/);
+        assert.match(appSource, /const WORLD_BOSS_STAT_LABELS/);
         assert.match(appSource, /competition: '比赛'/);
         assert.match(appSource, /保存并进入控制台/);
 
@@ -417,6 +444,22 @@ try {
             await page.locator('#start-button').click();
             assert.equal((await startResponse).status(), 200);
             await page.locator('#stop-button').waitFor({ state: 'visible' });
+            await page.waitForFunction(() =>
+                document.getElementById('world-boss-title')?.textContent ===
+                    'Abyssal Maw',
+            );
+            assert.equal(
+                await page.locator('#world-boss-status').textContent(),
+                '战斗中',
+            );
+            assert.equal(
+                await page.locator('#world-boss-hp').textContent(),
+                '10,000 / 30,000 · 33.3%',
+            );
+            assert.equal(
+                await page.locator('#world-boss-standing').textContent(),
+                '#2 · 3,000 伤害 · 2 次攻击',
+            );
             await page.waitForFunction(() =>
                 document.getElementById('tournament-title')?.textContent ===
                     '锦标赛 #226 · 普通赛',

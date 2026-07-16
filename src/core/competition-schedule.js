@@ -1,11 +1,13 @@
 export const COMPETITION_TYPES = Object.freeze({
+    WORLD_BOSS: 'world-boss',
     GUILD_TOURNAMENT: 'guild-tournament',
     DERBY: 'derby',
 });
 
 const TYPE_PRIORITY = Object.freeze({
-    [COMPETITION_TYPES.GUILD_TOURNAMENT]: 0,
-    [COMPETITION_TYPES.DERBY]: 1,
+    [COMPETITION_TYPES.WORLD_BOSS]: 0,
+    [COMPETITION_TYPES.GUILD_TOURNAMENT]: 1,
+    [COMPETITION_TYPES.DERBY]: 2,
 });
 
 function normalizeDate(value) {
@@ -26,14 +28,17 @@ export function normalizeCompetitionSchedule(competitions) {
             const endAt = normalizeDate(competition?.endAt);
             const biomeId = Number(competition?.biomeId);
             const id = String(competition?.id ?? '').trim();
+            const requiresBiome = type !== COMPETITION_TYPES.WORLD_BOSS;
 
             if (
                 !(type in TYPE_PRIORITY) ||
                 !startAt ||
                 !endAt ||
                 Date.parse(endAt) <= Date.parse(startAt) ||
-                !Number.isSafeInteger(biomeId) ||
-                biomeId < 1 ||
+                (
+                    requiresBiome &&
+                    (!Number.isSafeInteger(biomeId) || biomeId < 1)
+                ) ||
                 !id
             ) {
                 return null;
@@ -45,7 +50,9 @@ export function normalizeCompetitionSchedule(competitions) {
                 number: Number.isFinite(Number(competition?.number))
                     ? Number(competition.number)
                     : null,
-                biomeId,
+                biomeId: Number.isSafeInteger(biomeId) && biomeId >= 1
+                    ? biomeId
+                    : null,
                 startAt,
                 endAt,
             };

@@ -15,6 +15,7 @@ function clone(value) {
 function migrateLegacyDefaults(settings) {
     const fishing = settings?.features?.fishing;
     const map = settings?.features?.map;
+    const worldBoss = settings?.features?.worldBoss;
     let migrated = settings;
 
     if (
@@ -34,6 +35,16 @@ function migrateLegacyDefaults(settings) {
         }
 
         migrated.features.map.prioritizeTournament = true;
+    }
+
+    if (!worldBoss || typeof worldBoss.enabled !== 'boolean') {
+        if (migrated === settings) {
+            migrated = clone(settings);
+        }
+
+        migrated.features.worldBoss = clone(
+            DEFAULT_SETTINGS.features.worldBoss,
+        );
     }
 
     return migrated;

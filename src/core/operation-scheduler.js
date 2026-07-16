@@ -212,10 +212,11 @@ export class OperationScheduler {
         this.competitionId = competitionId;
         this.competitionUntil = Date.parse(competition.endAt);
 
-        const label = competition.type ===
-            COMPETITION_TYPES.GUILD_TOURNAMENT
-            ? '公会锦标赛'
-            : '个人 Derby';
+        const label = competition.type === COMPETITION_TYPES.WORLD_BOSS
+            ? '世界 Boss'
+            : competition.type === COMPETITION_TYPES.GUILD_TOURNAMENT
+                ? '公会锦标赛'
+                : '个人 Derby';
 
         return {
             allowed: true,

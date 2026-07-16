@@ -106,6 +106,14 @@ export class AutomationEngine {
         ].join(' ');
     }
 
+    describeCompetition(competition) {
+        if (competition.type === 'world-boss') {
+            return competition.label;
+        }
+
+        return `${competition.label} #${competition.number || competition.id}`;
+    }
+
     async waitForSchedule(gate) {
         const isQuiet = gate.mode === OPERATION_STATES.QUIET;
         const target = isQuiet
@@ -146,7 +154,9 @@ export class AutomationEngine {
             target: competition ? `参与${competition.label}` : '恢复挂机页面',
             activeFeature: '挂机调度',
             message: competition
-                ? `${competition.label} #${competition.number || competition.id} 已开始，正在重新创建 Playwright 页面并进入 Biome ${competition.biomeId}。`
+                ? competition.type === 'world-boss'
+                    ? '世界 Boss 已出现，正在重新创建 Playwright 页面并进入活动。'
+                    : `${this.describeCompetition(competition)} 已开始，正在重新创建 Playwright 页面并进入 Biome ${competition.biomeId}。`
                 : '夜间休息已结束，正在重新创建 Playwright 页面。',
         });
         await this.browserLifecycle.resume();
@@ -183,9 +193,14 @@ export class AutomationEngine {
         const enabledFeatures = this.features.filter(feature =>
             feature.isEnabled(settings),
         );
+        const competitions = (this.session.getCompetitionSchedule?.() || [])
+            .filter(competition =>
+                competition.type !== 'world-boss' ||
+                settings.features.worldBoss?.enabled !== false,
+            );
         const gate = this.scheduler.evaluate({
             enabled: settings.automationEnabled && enabledFeatures.length > 0,
-            competitions: this.session.getCompetitionSchedule?.() || [],
+            competitions,
         });
         const previousMode = this.scheduleMode;
 
@@ -254,7 +269,7 @@ export class AutomationEngine {
                     phase: 'schedule',
                     target: `正在参与${gate.competition.label}`,
                     activeFeature: '赛事调度',
-                    message: `${gate.competition.label} #${gate.competition.number || gate.competition.id} 优先运行至 ${this.formatLocalTime(gate.until)}；期间不进入长暂停或挂机休息。`,
+                    message: `${this.describeCompetition(gate.competition)} 优先运行至 ${this.formatLocalTime(gate.until)}；期间不进入长暂停或挂机休息。`,
                 });
             } else {
                 await this.reporter.update({

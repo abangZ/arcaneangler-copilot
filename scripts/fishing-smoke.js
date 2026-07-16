@@ -143,6 +143,7 @@ try {
     legacySettings.features.fishing.clickDelayMinMs = 250;
     legacySettings.features.fishing.clickDelayMaxMs = 800;
     delete legacySettings.features.map.prioritizeTournament;
+    delete legacySettings.features.worldBoss;
     await fs.writeFile(filePath, JSON.stringify({
         version: SETTINGS_VERSION,
         configured: true,
@@ -160,6 +161,7 @@ try {
         snapshot.settings.features.map.prioritizeTournament,
         true,
     );
+    assert.equal(snapshot.settings.features.worldBoss.enabled, true);
 
     const persisted = JSON.parse(await fs.readFile(filePath, 'utf8'));
 
@@ -170,6 +172,7 @@ try {
         persisted.settings.features.map.prioritizeTournament,
         true,
     );
+    assert.equal(persisted.settings.features.worldBoss.enabled, true);
 
     const customSettings = structuredClone(DEFAULT_SETTINGS);
 

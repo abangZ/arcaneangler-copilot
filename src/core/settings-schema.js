@@ -36,6 +36,9 @@ export const DEFAULT_SETTINGS = deepFreeze({
             targetBiomeId: null,
             checkIntervalMs: 3_600_000,
         },
+        worldBoss: {
+            enabled: true,
+        },
         bait: {
             enabled: false,
             selectedBaitTier: 0,
@@ -164,7 +167,7 @@ export function validateSettings(input) {
     const features = expectObject(root.features, '功能配置');
     expectKnownKeys(
         features,
-        ['fishing', 'map', 'bait', 'verification'],
+        ['fishing', 'map', 'worldBoss', 'bait', 'verification'],
         '功能配置',
     );
 
@@ -187,6 +190,9 @@ export function validateSettings(input) {
         ],
         '自动地图配置',
     );
+
+    const worldBoss = expectObject(features.worldBoss, '世界 Boss 配置');
+    expectKnownKeys(worldBoss, ['enabled'], '世界 Boss 配置');
 
     const bait = expectObject(features.bait, '自动鱼饵配置');
     expectKnownKeys(bait, [
@@ -293,6 +299,12 @@ export function validateSettings(input) {
                     map.checkIntervalMs,
                     '地图检查间隔',
                     { min: 60_000, max: 86_400_000 },
+                ),
+            },
+            worldBoss: {
+                enabled: readBoolean(
+                    worldBoss.enabled,
+                    '自动参与世界 Boss 开关',
                 ),
             },
             bait: {

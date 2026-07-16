@@ -110,6 +110,20 @@
                                 <div><dt>当前地图</dt><dd id="current-biome">—</dd></div>
                                 <div><dt>地图效果</dt><dd id="current-biome-effect">—</dd></div>
                             </dl>
+                            <div class="derby-summary world-boss-summary">
+                                <div class="derby-heading">
+                                    <span class="eyebrow">世界 Boss</span>
+                                    <span id="world-boss-status" class="status-pill">暂无</span>
+                                </div>
+                                <strong id="world-boss-title">等待下一只世界 Boss</strong>
+                                <dl class="detail-list derby-detail-list">
+                                    <div><dt id="world-boss-time-label">出现时间</dt><dd id="world-boss-time">—</dd></div>
+                                    <div id="world-boss-hp-row" hidden><dt>剩余生命</dt><dd id="world-boss-hp">—</dd></div>
+                                    <div id="world-boss-weakness-row" hidden><dt>主要弱点</dt><dd id="world-boss-weakness">—</dd></div>
+                                    <div id="world-boss-standing-row" hidden><dt>个人战绩</dt><dd id="world-boss-standing">—</dd></div>
+                                    <div id="world-boss-participants-row" hidden><dt>参与人数</dt><dd id="world-boss-participants">—</dd></div>
+                                </dl>
+                            </div>
                             <div class="derby-summary">
                                 <div class="derby-heading">
                                     <span class="eyebrow">公会锦标赛</span>
@@ -328,6 +342,7 @@
                             <label><span>角色名</span><input id="character" placeholder="留空选择第一个角色"></label>
                             <label class="toggle-row"><span>无头模式</span><input id="headless" type="checkbox"></label>
                             <label class="toggle-row"><span>自动钓鱼</span><input id="fishing-enabled" type="checkbox"></label>
+                            <label class="toggle-row"><span>自动参与世界 Boss</span><input id="world-boss-enabled" type="checkbox"></label>
                             <label class="toggle-row"><span>强制经典模式</span><input id="classic-mode" type="checkbox"></label>
                             <label><span>最短点击延迟（ms）</span><input id="click-delay-min" type="number" min="0" max="60000" required></label>
                             <label><span>最长点击延迟（ms）</span><input id="click-delay-max" type="number" min="0" max="60000" required></label>

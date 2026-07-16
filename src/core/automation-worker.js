@@ -9,6 +9,7 @@ import { BaitFeature } from '../features/bait-feature.js';
 import { FishingFeature } from '../features/fishing-feature.js';
 import { MapFeature } from '../features/map-feature.js';
 import { VerificationFeature } from '../features/verification-feature.js';
+import { WorldBossFeature } from '../features/world-boss-feature.js';
 import { ArcaneAnglerPage } from '../site/arcane-angler-page.js';
 
 function enabledLabel(enabled) {
@@ -35,6 +36,7 @@ function describeRuntime(settings, profile) {
     const details = [
         `无头模式=${enabledLabel(settings.browser.headless)}`,
         `自动钓鱼=${enabledLabel(settings.features.fishing.enabled)}`,
+        `自动世界 Boss=${enabledLabel(settings.features.worldBoss.enabled)}`,
         `地图模式=${describeMapSettings(settings.features.map)}`,
         `公会锦标赛优先=${enabledLabel(settings.features.map.prioritizeTournament)}`,
         `自动鱼饵=${enabledLabel(settings.features.bait.enabled)}`,
@@ -190,6 +192,7 @@ export class AutomationWorker {
                         : previous.bait?.quantity ?? null,
                 }
                 : previous.bait || null,
+            worldBoss: previous.worldBoss || null,
             tournament: previous.tournament || null,
             derby: previous.derby || null,
             competitions: previous.competitions || [],
@@ -198,6 +201,38 @@ export class AutomationWorker {
 
         await this.publishDashboardSnapshot(snapshot);
         await this.refreshDashboardSnapshot();
+    }
+
+    async updateWorldBossSnapshot(worldBoss) {
+        const previous = this.dashboardSnapshot || {};
+        const previousBoss = previous.worldBoss;
+        const sameActiveBoss = worldBoss?.status === 'active' &&
+            previousBoss?.status === 'active' &&
+            worldBoss.id === previousBoss.id;
+        const nextWorldBoss = sameActiveBoss
+            ? {
+                ...previousBoss,
+                ...worldBoss,
+                standing: worldBoss.standing || previousBoss.standing
+                    ? {
+                        ...previousBoss.standing,
+                        ...worldBoss.standing,
+                        rank: worldBoss.standing?.rank ??
+                            previousBoss.standing?.rank ??
+                            null,
+                    }
+                    : null,
+            }
+            : worldBoss;
+
+        await this.publishDashboardSnapshot({
+            ...previous,
+            worldBoss: nextWorldBoss,
+            competitions: this.session?.getCompetitionSchedule?.() ||
+                previous.competitions ||
+                [],
+            observedAt: new Date().toISOString(),
+        });
     }
 
     configurePage(page) {
@@ -335,6 +370,11 @@ export class AutomationWorker {
         this.engine.register(new VerificationFeature({
             session: this.session,
             reporter: this.reporter,
+        }));
+        this.engine.register(new WorldBossFeature({
+            session: this.session,
+            reporter: this.reporter,
+            onState: worldBoss => this.updateWorldBossSnapshot(worldBoss),
         }));
         this.engine.register(new MapFeature({
             session: this.session,

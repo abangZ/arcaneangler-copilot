@@ -130,6 +130,12 @@ const competitionScheduler = new OperationScheduler(config, {
 });
 const overlappingCompetitions = [
     {
+        type: 'world-boss',
+        id: 'anomaly-9',
+        startAt: '2026-07-16T02:35:00.000Z',
+        endAt: '2026-07-16T02:50:00.000Z',
+    },
+    {
         type: 'derby',
         id: '17',
         number: 17,
@@ -155,6 +161,12 @@ gate = competitionScheduler.evaluate({
 });
 assert.equal(gate.allowed, true);
 assert.equal(gate.mode, OPERATION_STATES.COMPETITION);
+assert.equal(gate.competition.type, 'world-boss');
+assert.equal(gate.competition.biomeId, null);
+competitionNow = new Date(2026, 6, 16, 10, 50, 0, 0);
+gate = competitionScheduler.evaluate({
+    competitions: overlappingCompetitions,
+});
 assert.equal(gate.competition.type, 'guild-tournament');
 assert.equal(gate.competition.biomeId, 4);
 assert.equal(competitionScheduler.canOperateNow(), true);
@@ -296,5 +308,5 @@ assert.deepEqual(lifecycleEvents.slice(-5), [
 ]);
 
 console.log(
-    'Scheduler smoke passed: competition priority, deferred rest, night wakeup and delayed morning resume work.',
+    'Scheduler smoke passed: world boss priority, deferred rest, night wakeup and delayed morning resume work.',
 );

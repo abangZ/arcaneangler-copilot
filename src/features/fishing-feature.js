@@ -144,7 +144,12 @@ export class FishingFeature {
         const castButton = await this.session.getReadyCastButton();
 
         if (castButton) {
-            const competition = this.session.getActiveCompetition?.();
+            const observedCompetition =
+                this.session.getActiveCompetition?.();
+            const competition = observedCompetition?.type === 'world-boss' &&
+                settings.features.worldBoss?.enabled === false
+                ? null
+                : observedCompetition;
             const delay = selectCastDelay(settings.features.fishing, {
                 competitionActive: Boolean(competition),
             });
@@ -153,7 +158,7 @@ export class FishingFeature {
                 level: 'running',
                 phase: 'fishing',
                 target: '点击抛竿按钮',
-                message: `抛竿按钮已可用，${competition ? `${competition.type === 'guild-tournament' ? '公会锦标赛' : '个人赛事'}期间` : ''}本次${delay.label}，等待 ${delay.durationMs}ms 后点击。`,
+                message: `抛竿按钮已可用，${competition ? `${competition.type === 'world-boss' ? '世界 Boss' : competition.type === 'guild-tournament' ? '公会锦标赛' : '个人赛事'}期间` : ''}本次${delay.label}，等待 ${delay.durationMs}ms 后点击。`,
             }, { record: false });
             await waitForCastDelay(delay.durationMs, {
                 assertAllowed: () =>

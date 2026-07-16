@@ -128,7 +128,7 @@ stopped -> starting -> running -> pausing -> paused
 
 ### `src/core/automation-engine.js`
 
-- 注册并按优先级调度 Verification、Map、Bait、Fishing。
+- 注册并按优先级调度 Verification、WorldBoss、Map、Bait、Fishing。
 - 每轮读取最新配置，并把最新 schedule 交给 `OperationScheduler`。
 - 操作前继续通过 `isOperationAllowed()` / `AutomationPausedError` 做实时门禁。
 - 连续异常达到网页配置的阈值后截图并尝试恢复。
@@ -140,7 +140,7 @@ stopped -> starting -> running -> pausing -> paused
 - 已参与的活动优先于自动 rest/quiet；用户手动关闭自动化仍然生效。
 - schedule 变化时重置当前周期并使用新配置重新计算。
 - quiet 会关闭整个 Playwright persistent context，而不是只关闭 page；常规恢复时间在配置的 quiet end 后再延迟 1 小时。
-- 已记录活动在 quiet 内开始时进入 `competition` 并临时重建浏览器，结束后继续 quiet；比赛期间到期的 active 周期会在比赛结束后补休。
+- 已记录活动在 quiet 内开始时进入 `competition` 并临时重建浏览器，结束后继续 quiet；活动期间到期的 active 周期会在活动结束后补休。世界 Boss 不要求 Biome，并优先于同时段的钓鱼赛事。
 
 ## 页面与 Feature 边界
 
@@ -148,12 +148,13 @@ stopped -> starting -> running -> pausing -> paused
 
 页面 adapter 监听页面自己产生的 `POST /api/game/cast` 成功响应，用页面 `BIOMES` / `BAITS` catalog 补齐地图名、鱼饵名和价格后交给 `StatsStore`，同时缓存响应中的 `equippedBait` / `baitQuantity` 供 `BaitFeature` 判断是否需要打开 Equipment。该监听不会发起额外抛竿请求，也不会改变页面对响应的消费。
 
-角色、天气和赛事状态通过页面已有 `ApiService.getPlayerData()`、`getAllBiomeWeather()`、`getCurrentTournaments()`、`getCurrentDerbies()` 做低频只读采集。公会锦标赛是否参与以 standings 中存在当前 `guild_id` 为准，不能只依据全局 active tournament 或 Biomes 页标签。
+角色、天气和赛事状态通过页面已有 `ApiService.getPlayerData()`、`getAllBiomeWeather()`、`getCurrentAnomaly()`、`getCurrentTournaments()`、`getCurrentDerbies()` 做低频只读采集。公会锦标赛是否参与以 standings 中存在当前 `guild_id` 为准，不能只依据全局 active tournament 或 Biomes 页标签。世界 Boss 的 inactive 响应提供 `nextSpawnTime`，active 响应提供生命值、结束时间、弱点、个人参与和排行榜。
 首页复用同一份锦标赛 standings，按数组顺序计算当前公会排名，并展示 `total_points` 与 `fish_caught`；没有 standings 或当前公会未参赛时隐藏进度和排名。
 
 feature 只编排语义操作：
 
 - `VerificationFeature`：优先处理页面验证。
+- `WorldBossFeature`：默认开启；活动中进入 Anomalies 页面并通过主要弱点对应的页面按钮持续攻击。只读接口用于发现和展示，不直接构造攻击请求。
 - `MapFeature`：自动切图与公会锦标赛优先是两个默认开启的独立设置。锦标赛优先开启时，已参与锦标赛覆盖关闭/固定/自动地图策略；比赛结束后恢复原策略。自动模式继续报名可参与 Derby，并按个人 Derby、经验权重选择已解锁地图。
 - `BaitFeature`：按当前地图的 `0..4` 档位购买和装备鱼饵；已知库存充足时复用 `/cast` 缓存，不进入 Equipment。
 - `FishingFeature`：确保经典模式，常规状态按 90% 常规、8% 短停顿、2% 长停顿分层等待；比赛期间跳过长停顿。等待期间每 500ms 重新检查 scheduler gate。

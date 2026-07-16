@@ -14,6 +14,154 @@ import {
 } from '../core/competition-schedule.js';
 import { AutomationPausedError } from '../core/operation-scheduler.js';
 
+const WORLD_BOSS_WAKE_WINDOW_MS = 15 * 60_000;
+
+function normalizedDate(value, fallback = null) {
+    const timestamp = Date.parse(value);
+
+    if (Number.isFinite(timestamp)) {
+        return new Date(timestamp).toISOString();
+    }
+
+    return fallback;
+}
+
+function normalizedFiniteNumber(value) {
+    if (value == null || value === '') {
+        return null;
+    }
+
+    const number = Number(value);
+
+    return Number.isFinite(number) ? number : null;
+}
+
+function normalizeWorldBossResponse(response, playerUserId = null) {
+    const event = response?.event || null;
+    const anomaly = event?.anomaly || null;
+    const active = response?.active === true && Boolean(event && anomaly);
+    const now = new Date().toISOString();
+    const nextSpawnAt = normalizedDate(
+        response?.nextSpawnTime || event?.nextSpawnTime,
+    );
+
+    if (!active) {
+        if (!nextSpawnAt) {
+            return { worldBoss: null, competition: null };
+        }
+
+        const wakeEndAt = new Date(
+            Date.parse(nextSpawnAt) + WORLD_BOSS_WAKE_WINDOW_MS,
+        ).toISOString();
+
+        return {
+            worldBoss: {
+                status: 'upcoming',
+                id: `spawn:${nextSpawnAt}`,
+                name: null,
+                startAt: nextSpawnAt,
+                endAt: null,
+                hp: null,
+                weakness: null,
+                participantCount: null,
+                activeParticipantCount: null,
+                totalDamage: null,
+                standing: null,
+            },
+            competition: {
+                type: 'world-boss',
+                id: `spawn:${nextSpawnAt}`,
+                startAt: nextSpawnAt,
+                endAt: wakeEndAt,
+            },
+        };
+    }
+
+    const endAt = normalizedDate(
+        event.endTime || response?.endTime,
+        new Date(Date.now() + WORLD_BOSS_WAKE_WINDOW_MS).toISOString(),
+    );
+    const startAt = normalizedDate(
+        event.startTime || response?.startTime,
+        now,
+    );
+    const eventId = String(
+        event.id ?? event.eventId ?? anomaly.id ?? endAt,
+    );
+    const leaderboard = Array.isArray(response?.leaderboard)
+        ? response.leaderboard
+        : [];
+    const standingIndex = leaderboard.findIndex(entry =>
+        entry?.is_current_user === true ||
+        (
+            playerUserId != null &&
+            Number(entry?.user_id) === Number(playerUserId)
+        ),
+    );
+    const standingEntry = leaderboard[standingIndex] || null;
+    const participation = response?.playerParticipation || null;
+    const damageDealt = normalizedFiniteNumber(
+        participation?.damageDealt ?? standingEntry?.damage_dealt,
+    );
+    const attacksMade = normalizedFiniteNumber(
+        participation?.attacksMade ?? standingEntry?.attacks_made,
+    );
+    const currentHp = normalizedFiniteNumber(event.currentHp);
+    const maxHp = normalizedFiniteNumber(event.maxHp);
+    const hpPercentage = normalizedFiniteNumber(event.hpPercentage) ??
+        (
+            currentHp != null && maxHp > 0
+                ? currentHp / maxHp * 100
+                : null
+        );
+
+    return {
+        worldBoss: {
+            status: 'active',
+            id: eventId,
+            bossId: String(anomaly.id ?? '').trim() || null,
+            name: String(anomaly.name || '').trim() || '世界 Boss',
+            startAt,
+            endAt,
+            hp: currentHp != null || maxHp != null || hpPercentage != null
+                ? {
+                    current: currentHp,
+                    max: maxHp,
+                    percentage: hpPercentage,
+                }
+                : null,
+            weakness: {
+                primary: String(anomaly.primaryWeakness || '').trim() || null,
+                secondary: String(
+                    anomaly.secondaryWeakness || '',
+                ).trim() || null,
+                resistant: String(anomaly.resistantStat || '').trim() || null,
+            },
+            participantCount: normalizedFiniteNumber(
+                event.totalParticipants,
+            ),
+            activeParticipantCount: normalizedFiniteNumber(
+                event.activeParticipants,
+            ),
+            totalDamage: normalizedFiniteNumber(event.totalDamage),
+            standing: standingIndex >= 0 || damageDealt != null ||
+                attacksMade != null
+                ? {
+                    rank: standingIndex >= 0 ? standingIndex + 1 : null,
+                    damage: damageDealt,
+                    attacks: attacksMade,
+                }
+                : null,
+        },
+        competition: {
+            type: 'world-boss',
+            id: eventId,
+            startAt,
+            endAt,
+        },
+    };
+}
+
 function randomFloat(min, max) {
     return Math.random() * (max - min) + min;
 }
@@ -50,8 +198,23 @@ export class ArcaneAnglerPage {
         this.attachPage(page);
     }
 
-    rememberCompetitionSchedule(competitions) {
-        this.competitionSchedule = normalizeCompetitionSchedule(competitions);
+    rememberCompetitionSchedule(competitions, { replaceTypes = null } = {}) {
+        const normalized = normalizeCompetitionSchedule(competitions);
+
+        if (Array.isArray(replaceTypes)) {
+            const replacedTypes = new Set(replaceTypes);
+            const retained = this.competitionSchedule.filter(competition =>
+                !replacedTypes.has(competition.type),
+            );
+
+            this.competitionSchedule = normalizeCompetitionSchedule([
+                ...retained,
+                ...normalized,
+            ]);
+        } else {
+            this.competitionSchedule = normalized;
+        }
+
         return this.getCompetitionSchedule();
     }
 
@@ -221,6 +384,7 @@ export class ArcaneAnglerPage {
                 derbyResponse,
                 tournamentResponse,
                 guildResponse,
+                anomalyResponse,
             ] = await Promise.all([
                 window.ApiService.getPlayerData(),
                 window.ApiService.getAllBiomeWeather().catch(() => ({})),
@@ -228,6 +392,8 @@ export class ArcaneAnglerPage {
                 window.ApiService.getCurrentTournaments?.().catch(() => ({})) ||
                     Promise.resolve({}),
                 window.ApiService.getMyGuild?.().catch(() => ({})) ||
+                    Promise.resolve({}),
+                window.ApiService.getCurrentAnomaly?.().catch(() => ({})) ||
                     Promise.resolve({}),
             ]);
             const player = playerResponse?.player || playerResponse;
@@ -399,7 +565,9 @@ export class ArcaneAnglerPage {
                     endAt: derby.end_time,
                 })),
             ];
-            const playerUserId = player?.userId ?? player?.id;
+            const playerUserId = player?.userId ??
+                player?.user_id ??
+                player?.id;
             let derbyStanding = null;
 
             if (
@@ -449,6 +617,8 @@ export class ArcaneAnglerPage {
             );
 
             return {
+                playerUserId,
+                anomalyResponse,
                 level: Number(player?.level),
                 xp: Number(player?.xp),
                 xpToNext: Number(player?.xpToNext),
@@ -554,9 +724,16 @@ export class ArcaneAnglerPage {
                 : null;
         };
 
-        const competitions = this.rememberCompetitionSchedule(
-            snapshot.competitions,
+        const worldBossState = normalizeWorldBossResponse(
+            snapshot.anomalyResponse,
+            snapshot.playerUserId,
         );
+        const competitions = this.rememberCompetitionSchedule([
+            ...snapshot.competitions,
+            ...(worldBossState.competition
+                ? [worldBossState.competition]
+                : []),
+        ]);
 
         if (snapshot.bait?.id) {
             this.rememberEquippedBait(snapshot.bait.id);
@@ -575,6 +752,7 @@ export class ArcaneAnglerPage {
             xpToNext: normalizedNumber(snapshot.xpToNext, { positive: true }),
             biome: snapshot.biome,
             bait: snapshot.bait,
+            worldBoss: worldBossState.worldBoss,
             tournament: snapshot.tournament,
             derby: snapshot.derby,
             competitions,
@@ -650,11 +828,33 @@ export class ArcaneAnglerPage {
             biomes: 1,
             equipment: 4,
             events: 12,
+            anomalies: 15,
             options: 20,
+        };
+        const fallbackLabels = {
+            fishing: 'Fishing',
+            biomes: 'Biomes',
+            equipment: 'Equipment',
+            events: 'Events',
+            anomalies: 'Anomalies',
+            options: 'Options',
         };
 
         if (navigation) {
             const buttons = navigation.locator(':scope > button');
+            const fallbackLabel = fallbackLabels[destination];
+            const semanticCandidate = fallbackLabel
+                ? await firstVisible(buttons.filter({
+                    has: this.page.locator(
+                        `img[alt="${fallbackLabel}"]`,
+                    ),
+                }))
+                : null;
+
+            if (semanticCandidate) {
+                return semanticCandidate;
+            }
+
             const index = destinationIndexes[destination];
             const candidate = Number.isInteger(index) &&
                 await buttons.count() > index
@@ -666,13 +866,6 @@ export class ArcaneAnglerPage {
             }
         }
 
-        const fallbackLabels = {
-            fishing: 'Fishing',
-            biomes: 'Biomes',
-            equipment: 'Equipment',
-            events: 'Events',
-            options: 'Options',
-        };
         const fallbackLabel = fallbackLabels[destination];
 
         if (!fallbackLabel) {
@@ -1081,13 +1274,17 @@ export class ArcaneAnglerPage {
     }
 
     async isFishingPage() {
-        const fishingButton = await this.getSidebarButton('fishing');
+        return this.isSidebarPage('fishing');
+    }
 
-        if (!fishingButton) {
+    async isSidebarPage(destination) {
+        const sidebarButton = await this.getSidebarButton(destination);
+
+        if (!sidebarButton) {
             return false;
         }
 
-        const className = await fishingButton.getAttribute('class');
+        const className = await sidebarButton.getAttribute('class');
         return className?.includes('border-l-4') || false;
     }
 
@@ -1111,6 +1308,119 @@ export class ArcaneAnglerPage {
             message: '无法进入钓鱼页面',
             shouldStop: this.shouldStop,
         });
+    }
+
+    async getWorldBossAutomationState() {
+        const response = await this.page.evaluate(async () => {
+            if (typeof window.ApiService?.getCurrentAnomaly !== 'function') {
+                throw new Error('页面未提供世界 Boss 状态接口。');
+            }
+
+            return window.ApiService.getCurrentAnomaly();
+        });
+        const state = normalizeWorldBossResponse(response);
+
+        this.rememberCompetitionSchedule(
+            state.competition ? [state.competition] : [],
+            { replaceTypes: ['world-boss'] },
+        );
+
+        return state.worldBoss;
+    }
+
+    async openWorldBossPage() {
+        if (!(await this.isSidebarPage('anomalies'))) {
+            await this.navigateToSidebarPage('anomalies');
+        }
+
+        await waitUntil(() => this.isSidebarPage('anomalies'), {
+            timeoutMs: this.config.navigationTimeoutMs,
+            message: '无法进入世界 Boss 页面',
+            shouldStop: this.shouldStop,
+        });
+    }
+
+    async getWorldBossAttackButton(stat) {
+        const attackLabels = {
+            strength: /Harpoon Strike/i,
+            intelligence: /Arcane Bolt/i,
+            luck: /Lucky Strike/i,
+            stamina: /Tidal Surge/i,
+        };
+        const attackIndexes = {
+            strength: 0,
+            intelligence: 1,
+            luck: 2,
+            stamina: 3,
+        };
+        const label = attackLabels[stat];
+        const namedButton = label
+            ? await firstVisible(this.page.getByRole('button', { name: label }))
+            : null;
+
+        if (namedButton) {
+            return namedButton;
+        }
+
+        const buttons = this.page.locator(
+            'div.grid.grid-cols-2.md\\:grid-cols-2 > button',
+        );
+        const index = attackIndexes[stat];
+
+        if (
+            Number.isSafeInteger(index) &&
+            await buttons.count() > index &&
+            await isVisible(buttons.nth(index))
+        ) {
+            return buttons.nth(index);
+        }
+
+        return null;
+    }
+
+    async attackWorldBossThroughUi(stat) {
+        await this.openWorldBossPage();
+
+        let attackButton = null;
+
+        await waitUntil(async () => {
+            attackButton = await this.getWorldBossAttackButton(stat);
+            return Boolean(attackButton);
+        }, {
+            timeoutMs: this.config.navigationTimeoutMs,
+            message: `世界 Boss 页面中找不到 ${stat} 攻击按钮`,
+            shouldStop: this.shouldStop,
+        });
+
+        if (!(await attackButton.isEnabled())) {
+            return { attacked: false, cooldown: true };
+        }
+
+        const attackResponse = this.page.waitForResponse(response => {
+            const request = response.request();
+            const pathname = new URL(response.url()).pathname;
+
+            return request.method() === 'POST' &&
+                pathname === '/api/anomalies/attack';
+        }, { timeout: this.config.navigationTimeoutMs }).catch(() => null);
+
+        await this.trustedClick(attackButton);
+        const response = await attackResponse;
+        const payload = response?.ok()
+            ? await response.json().catch(() => null)
+            : null;
+
+        return {
+            attacked: true,
+            cooldown: false,
+            damage: normalizedFiniteNumber(payload?.attack?.finalDamage),
+            currentHp: normalizedFiniteNumber(payload?.anomaly?.currentHp),
+            hpPercentage: normalizedFiniteNumber(
+                payload?.anomaly?.hpPercentage,
+            ),
+            defeated: payload?.anomaly?.defeated === true,
+            name: String(payload?.anomaly?.name || '').trim() || null,
+        };
     }
 
     async getMapAutomationState({ includeAutoData = true } = {}) {
@@ -1298,6 +1608,7 @@ export class ArcaneAnglerPage {
 
         state.competitions = this.rememberCompetitionSchedule(
             state.competitions,
+            { replaceTypes: ['guild-tournament', 'derby'] },
         );
         return state;
     }

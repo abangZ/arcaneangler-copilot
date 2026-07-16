@@ -19,6 +19,11 @@ const elementIds = [
     'current-bait-rarity-list',
     'player-level', 'player-xp-percent', 'player-xp-bar', 'player-xp-text',
     'level-eta', 'current-biome', 'current-biome-effect',
+    'world-boss-status', 'world-boss-title', 'world-boss-time-label',
+    'world-boss-time', 'world-boss-hp-row', 'world-boss-hp',
+    'world-boss-weakness-row', 'world-boss-weakness',
+    'world-boss-standing-row', 'world-boss-standing',
+    'world-boss-participants-row', 'world-boss-participants',
     'tournament-status', 'tournament-title', 'tournament-time-label',
     'tournament-time', 'tournament-biome', 'tournament-standing-row',
     'tournament-standing', 'tournament-progress-row',
@@ -43,7 +48,8 @@ const elementIds = [
     'log-list', 'settings-title', 'settings-subtitle',
     'settings-back', 'load-error-warning', 'settings-form',
     'settings-revision', 'settings-note', 'save-settings', 'character',
-    'headless', 'fishing-enabled', 'classic-mode', 'click-delay-min',
+    'headless', 'fishing-enabled', 'world-boss-enabled', 'classic-mode',
+    'click-delay-min',
     'click-delay-max', 'map-mode', 'prioritize-tournament',
     'target-biome', 'map-check-minutes',
     'bait-enabled', 'bait-tier', 'bait-threshold', 'bait-quantity',
@@ -132,6 +138,12 @@ const DERBY_TYPE_LABELS = Object.freeze({
     ironman: '铁人赛',
 });
 const TOURNAMENT_TYPE_LABELS = DERBY_TYPE_LABELS;
+const WORLD_BOSS_STAT_LABELS = Object.freeze({
+    strength: '力量',
+    intelligence: '智力',
+    luck: '幸运',
+    stamina: '耐力',
+});
 
 function base64UrlToBytes(value) {
     const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
@@ -464,6 +476,8 @@ function fillSettings(snapshot) {
     elements.character.value = settings.general.character || '';
     elements.headless.checked = settings.browser.headless;
     elements['fishing-enabled'].checked = settings.features.fishing.enabled;
+    elements['world-boss-enabled'].checked =
+        settings.features.worldBoss.enabled;
     elements['classic-mode'].checked = settings.features.fishing.enforceClassicMode;
     elements['click-delay-min'].value = settings.features.fishing.clickDelayMinMs;
     elements['click-delay-max'].value = settings.features.fishing.clickDelayMaxMs;
@@ -529,6 +543,9 @@ function collectSettings() {
                     ? integer('target-biome')
                     : null,
                 checkIntervalMs: integer('map-check-minutes') * 60_000,
+            },
+            worldBoss: {
+                enabled: elements['world-boss-enabled'].checked,
             },
             bait: {
                 enabled: elements['bait-enabled'].checked,
@@ -783,6 +800,103 @@ function renderOverview() {
             ? `经验 ${xpBonus >= 0 ? '+' : ''}${formatNumber(xpBonus)}%`
             : null,
     ].filter(Boolean).join(' · ') || '—';
+
+    const worldBoss = dashboard?.worldBoss;
+    const worldBossActive = worldBoss?.status === 'active';
+
+    elements['world-boss-status'].textContent = worldBoss
+        ? worldBossActive ? '战斗中' : '等待出现'
+        : '暂无';
+    elements['world-boss-status'].className = worldBoss
+        ? `status-pill ${worldBossActive ? 'running' : 'waiting'}`
+        : 'status-pill';
+    elements['world-boss-title'].textContent = worldBossActive
+        ? worldBoss.name || '世界 Boss'
+        : worldBoss
+            ? '下一只世界 Boss'
+            : '等待下一只世界 Boss';
+    elements['world-boss-time-label'].textContent = worldBossActive
+        ? '结束时间'
+        : '出现时间';
+    elements['world-boss-time'].textContent = worldBoss
+        ? formatFullDate(worldBossActive ? worldBoss.endAt : worldBoss.startAt)
+        : '—';
+    const bossCurrentHp = Number(worldBoss?.hp?.current);
+    const bossMaxHp = Number(worldBoss?.hp?.max);
+    const bossHpPercentage = Number(worldBoss?.hp?.percentage);
+    const hasBossCurrentHp = worldBoss?.hp?.current != null &&
+        Number.isFinite(bossCurrentHp);
+    const hasBossMaxHp = worldBoss?.hp?.max != null &&
+        Number.isFinite(bossMaxHp);
+    const hasBossHpPercentage = worldBoss?.hp?.percentage != null &&
+        Number.isFinite(bossHpPercentage);
+    const hasBossHp = worldBossActive && (
+        hasBossCurrentHp || hasBossMaxHp || hasBossHpPercentage
+    );
+
+    elements['world-boss-hp-row'].hidden = !hasBossHp;
+    elements['world-boss-hp'].textContent = hasBossHp
+        ? [
+            hasBossCurrentHp && hasBossMaxHp
+                ? `${formatNumber(bossCurrentHp, 0)} / ${formatNumber(bossMaxHp, 0)}`
+                : null,
+            hasBossHpPercentage
+                ? `${formatNumber(bossHpPercentage, 1)}%`
+                : null,
+        ].filter(Boolean).join(' · ')
+        : '—';
+    const bossWeakness = worldBoss?.weakness?.primary;
+
+    elements['world-boss-weakness-row'].hidden =
+        !worldBossActive || !bossWeakness;
+    elements['world-boss-weakness'].textContent = bossWeakness
+        ? WORLD_BOSS_STAT_LABELS[bossWeakness] || bossWeakness
+        : '—';
+    const bossRank = Number(worldBoss?.standing?.rank);
+    const bossDamage = Number(worldBoss?.standing?.damage);
+    const bossAttacks = Number(worldBoss?.standing?.attacks);
+    const hasBossRank = worldBoss?.standing?.rank != null &&
+        Number.isSafeInteger(bossRank) && bossRank > 0;
+    const hasBossDamage = worldBoss?.standing?.damage != null &&
+        Number.isFinite(bossDamage);
+    const hasBossAttacks = worldBoss?.standing?.attacks != null &&
+        Number.isFinite(bossAttacks);
+    const hasBossStanding = worldBossActive && (
+        hasBossRank || hasBossDamage || hasBossAttacks
+    );
+
+    elements['world-boss-standing-row'].hidden = !hasBossStanding;
+    elements['world-boss-standing'].textContent = hasBossStanding
+        ? [
+            hasBossRank ? `#${formatNumber(bossRank, 0)}` : null,
+            hasBossDamage ? `${formatNumber(bossDamage, 0)} 伤害` : null,
+            hasBossAttacks ? `${formatNumber(bossAttacks, 0)} 次攻击` : null,
+        ].filter(Boolean).join(' · ')
+        : '—';
+    const bossParticipants = Number(worldBoss?.participantCount);
+    const bossActiveParticipants = Number(
+        worldBoss?.activeParticipantCount,
+    );
+    const hasBossParticipantCount = worldBoss?.participantCount != null &&
+        Number.isFinite(bossParticipants);
+    const hasBossActiveParticipantCount =
+        worldBoss?.activeParticipantCount != null &&
+        Number.isFinite(bossActiveParticipants);
+    const hasBossParticipants = worldBossActive && (
+        hasBossParticipantCount || hasBossActiveParticipantCount
+    );
+
+    elements['world-boss-participants-row'].hidden = !hasBossParticipants;
+    elements['world-boss-participants'].textContent = hasBossParticipants
+        ? [
+            hasBossParticipantCount
+                ? `${formatNumber(bossParticipants, 0)} 总计`
+                : null,
+            hasBossActiveParticipantCount
+                ? `${formatNumber(bossActiveParticipants, 0)} 活跃`
+                : null,
+        ].filter(Boolean).join(' · ')
+        : '—';
 
     const tournament = dashboard?.tournament;
     const tournamentActive = tournament?.status === 'active';
