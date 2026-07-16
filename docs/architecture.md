@@ -7,7 +7,7 @@ Arcane Angler Copilot 由常驻 Web 控制面和按需创建的 Playwright Worke
 ```text
 .env（账户 / Web 基础设施）
           │
-          ├──> AuthService ──> session / CSRF
+          ├──> AuthService ──> .data/sessions.json / CSRF
           │
 Browser ──> ControlServer ──> WorkerController ──> AutomationWorker
    ▲              │                  │                    │

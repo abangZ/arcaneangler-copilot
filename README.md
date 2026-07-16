@@ -96,7 +96,7 @@ http://127.0.0.1:3200
 
 ## 远程安全访问
 
-Web 登录使用一次性随机 salt/nonce、PBKDF2 和 HMAC 验证；浏览器不会把原始密码作为请求正文发送。登录成功后，服务端下发带 `HttpOnly`、`SameSite=Strict` 的 12 小时 session cookie，修改操作还需要 CSRF token。同一账号可同时保有多个独立 session；退出某一终端不会退出其他终端。
+Web 登录使用一次性随机 salt/nonce、PBKDF2 和 HMAC 验证；浏览器不会把原始密码作为请求正文发送。登录成功后，服务端下发带 `HttpOnly`、`SameSite=Strict` 的 31 天 session cookie，修改操作还需要 CSRF token。服务端只把 session token 的哈希和必要的会话信息持久化到 `.data/sessions.json`，因此服务重启后登录态仍然有效，原始 cookie token 不会写入磁盘。同一账号可同时保有多个独立 session；退出某一终端不会退出其他终端。
 
 这些机制不能替代 HTTPS。远程访问时推荐保留 `ARCANE_WEB_HOST=127.0.0.1`，并选择以下方式之一。
 

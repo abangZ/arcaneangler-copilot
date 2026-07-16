@@ -354,7 +354,7 @@ export class ControlServer {
         if (request.method === 'POST' && pathname === '/api/auth/logout') {
             const { token } = this.requireMutationSession(request);
 
-            this.authService.logout(token);
+            await this.authService.logout(token);
             await this.reporter.log({
                 level: 'idle',
                 phase: 'web',

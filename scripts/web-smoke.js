@@ -230,10 +230,13 @@ try {
         reporter,
         createWorker: createFakeWorker,
     });
+    const sessionsFile = path.join(tempDirectory, 'sessions.json');
     const authService = new AuthService({
         username: 'angler',
         password: 'correct horse battery staple',
+        filePath: sessionsFile,
     });
+    await authService.initialize();
     const server = new ControlServer({
         host: '127.0.0.1',
         port: 0,
@@ -302,6 +305,7 @@ try {
         assert.ok(cookie.startsWith('arcane_session='));
         assert.match(setCookie, /HttpOnly/);
         assert.match(setCookie, /SameSite=Strict/);
+        assert.match(setCookie, /Max-Age=2678400/);
         assert.doesNotMatch(setCookie, /; Secure/);
         assert.equal(result.body.secureTransport, false);
 
@@ -316,6 +320,22 @@ try {
             .split(';')[0];
         const secondCsrfToken = secondLogin.body.csrfToken;
         assert.notEqual(secondCookie, cookie);
+
+        const storedSessions = await fs.readFile(sessionsFile, 'utf8');
+        assert.doesNotMatch(storedSessions, new RegExp(
+            cookie.slice('arcane_session='.length),
+        ));
+        assert.doesNotMatch(storedSessions, new RegExp(
+            secondCookie.slice('arcane_session='.length),
+        ));
+
+        const restartedAuthService = new AuthService({
+            username: 'angler',
+            password: 'correct horse battery staple',
+            filePath: sessionsFile,
+        });
+        await restartedAuthService.initialize();
+        server.authService = restartedAuthService;
 
         result = await requestJson(origin, '/api/session', {
             headers: originHeaders(origin, cookie),
@@ -335,6 +355,15 @@ try {
             body: '{}',
         });
         assert.equal(result.response.status, 200);
+
+        const reloadedAuthService = new AuthService({
+            username: 'angler',
+            password: 'correct horse battery staple',
+            filePath: sessionsFile,
+        });
+        await reloadedAuthService.initialize();
+        server.authService = reloadedAuthService;
+
         result = await requestJson(origin, '/api/session', {
             headers: originHeaders(origin, cookie),
         });

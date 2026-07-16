@@ -5,11 +5,14 @@ import {
     randomBytes,
     timingSafeEqual,
 } from 'node:crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { promisify } from 'node:util';
 
 const deriveKey = promisify(pbkdf2);
 const CHALLENGE_TTL_MS = 60_000;
-const SESSION_TTL_MS = 12 * 60 * 60 * 1_000;
+const SESSION_TTL_MS = 31 * 24 * 60 * 60 * 1_000;
+const SESSION_STORE_VERSION = 1;
 const FAILURE_WINDOW_MS = 15 * 60 * 1_000;
 const MAX_FAILURES = 5;
 const PBKDF2_ITERATIONS = 210_000;
@@ -47,14 +50,105 @@ function safeEqual(left, right) {
     }
 }
 
+function cloneSessions(sessions) {
+    return new Map(
+        [...sessions].map(([key, session]) => [
+            key,
+            structuredClone(session),
+        ]),
+    );
+}
+
+function normalizeStoredSession(value, username, now) {
+    if (
+        !value ||
+        typeof value !== 'object' ||
+        !/^[a-f0-9]{64}$/.test(value.key) ||
+        value.username !== username ||
+        !/^[A-Za-z0-9_-]{32}$/.test(value.csrfToken) ||
+        !Number.isSafeInteger(value.expiresAt) ||
+        value.expiresAt <= now
+    ) {
+        return null;
+    }
+
+    return {
+        key: value.key,
+        session: {
+            username: value.username,
+            csrfToken: value.csrfToken,
+            expiresAt: value.expiresAt,
+        },
+    };
+}
+
 export class AuthService {
-    constructor({ username, password, now = () => Date.now() }) {
+    constructor({
+        username,
+        password,
+        filePath = null,
+        now = () => Date.now(),
+    }) {
         this.username = username;
         this.password = password;
+        this.filePath = filePath;
         this.now = now;
         this.challenges = new Map();
         this.sessions = new Map();
         this.failures = new Map();
+        this.updateQueue = Promise.resolve();
+        this.loadError = null;
+    }
+
+    async initialize() {
+        if (!this.filePath) {
+            return;
+        }
+
+        const directory = path.dirname(this.filePath);
+
+        await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+        await fs.chmod(directory, 0o700);
+
+        try {
+            const raw = await fs.readFile(this.filePath, 'utf8');
+            const stored = JSON.parse(raw);
+
+            if (
+                stored.version !== SESSION_STORE_VERSION ||
+                !Array.isArray(stored.sessions)
+            ) {
+                throw new Error('Web session 存储格式不受支持。');
+            }
+
+            const now = this.now();
+            const sessions = stored.sessions
+                .map(value => normalizeStoredSession(
+                    value,
+                    this.username,
+                    now,
+                ))
+                .filter(Boolean)
+                .slice(-MAX_ACTIVE_SESSIONS);
+
+            this.sessions = new Map(
+                sessions.map(({ key, session }) => [key, session]),
+            );
+
+            if (sessions.length === stored.sessions.length) {
+                await fs.chmod(this.filePath, 0o600);
+            } else {
+                await this.writeSessions();
+            }
+        } catch (error) {
+            if (error.code !== 'ENOENT') {
+                this.loadError = error.message;
+            }
+        }
+    }
+
+    getLoadError() {
+        return this.loadError;
     }
 
     cleanup() {
@@ -193,12 +287,15 @@ export class AuthService {
             expiresAt: this.now() + SESSION_TTL_MS,
         };
 
-        if (this.sessions.size >= MAX_ACTIVE_SESSIONS) {
-            const oldestSessionKey = this.sessions.keys().next().value;
-            this.sessions.delete(oldestSessionKey);
-        }
+        await this.updateSessions(() => {
+            if (this.sessions.size >= MAX_ACTIVE_SESSIONS) {
+                const oldestSessionKey = this.sessions.keys().next().value;
+                this.sessions.delete(oldestSessionKey);
+            }
 
-        this.sessions.set(sessionKey(token), session);
+            this.sessions.set(sessionKey(token), session);
+        });
+
         return {
             token,
             session: structuredClone(session),
@@ -223,9 +320,60 @@ export class AuthService {
         }
     }
 
-    logout(token) {
-        if (token) {
+    async logout(token) {
+        if (!token) {
+            return;
+        }
+
+        await this.updateSessions(() => {
             this.sessions.delete(sessionKey(token));
+        });
+    }
+
+    async updateSessions(update) {
+        const result = this.updateQueue.then(
+            () => this.updateSessionsUnlocked(update),
+            () => this.updateSessionsUnlocked(update),
+        );
+
+        this.updateQueue = result.catch(() => {});
+        return result;
+    }
+
+    async updateSessionsUnlocked(update) {
+        const previous = cloneSessions(this.sessions);
+
+        update();
+
+        try {
+            await this.writeSessions();
+            this.loadError = null;
+        } catch (error) {
+            this.sessions = previous;
+            throw error;
+        }
+    }
+
+    async writeSessions() {
+        if (!this.filePath) {
+            return;
+        }
+
+        const temporaryPath = `${this.filePath}.${process.pid}.tmp`;
+        const serialized = `${JSON.stringify({
+            version: SESSION_STORE_VERSION,
+            sessions: [...this.sessions].map(([key, session]) => ({
+                key,
+                ...session,
+            })),
+        }, null, 2)}\n`;
+
+        try {
+            await fs.writeFile(temporaryPath, serialized, { mode: 0o600 });
+            await fs.chmod(temporaryPath, 0o600);
+            await fs.rename(temporaryPath, this.filePath);
+        } finally {
+            await fs.unlink(temporaryPath).catch(() => {});
         }
     }
 }

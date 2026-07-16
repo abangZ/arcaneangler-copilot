@@ -71,6 +71,7 @@ export const config = Object.freeze({
         readString('ARCANE_ARTIFACTS_DIR', 'artifacts'),
     ),
     settingsFile: resolveProjectPath('.data/settings.json'),
+    sessionsFile: resolveProjectPath('.data/sessions.json'),
     statsFile: resolveProjectPath('.data/stats.json'),
     logsDir: resolveProjectPath('.data/logs'),
 });

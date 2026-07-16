@@ -65,7 +65,10 @@ async function main() {
     const authService = new AuthService({
         username: config.username,
         password: config.password,
+        filePath: config.sessionsFile,
     });
+
+    await authService.initialize();
 
     server = new ControlServer({
         host: config.webHost,
@@ -102,6 +105,15 @@ async function main() {
             phase: 'web',
             target: '读取收益统计',
             message: `历史收益统计读取失败，已从空统计继续：${statsStore.get().loadError}`,
+        });
+    }
+
+    if (authService.getLoadError()) {
+        await reporter.log({
+            level: 'error',
+            phase: 'web',
+            target: '读取 Web session',
+            message: `历史 Web session 读取失败，已要求重新登录：${authService.getLoadError()}`,
         });
     }
 }
