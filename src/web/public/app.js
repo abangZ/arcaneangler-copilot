@@ -52,7 +52,8 @@ const elementIds = [
     'click-delay-min',
     'click-delay-max', 'map-mode', 'prioritize-tournament',
     'target-biome', 'map-check-minutes',
-    'bait-enabled', 'bait-tier', 'bait-threshold', 'bait-quantity',
+    'bait-enabled', 'bait-tier', 'bait-guild-tournament-tier',
+    'bait-derby-tier', 'bait-threshold', 'bait-quantity',
     'bait-check-seconds', 'active-min', 'active-max', 'rest-min',
     'rest-max', 'quiet-start', 'quiet-end', 'verification-enabled',
     'verification-delay-min', 'verification-delay-max',
@@ -488,6 +489,10 @@ function fillSettings(snapshot) {
     elements['map-check-minutes'].value = settings.features.map.checkIntervalMs / 60_000;
     elements['bait-enabled'].checked = settings.features.bait.enabled;
     elements['bait-tier'].value = settings.features.bait.selectedBaitTier;
+    elements['bait-guild-tournament-tier'].value =
+        settings.features.bait.guildTournamentBaitTier;
+    elements['bait-derby-tier'].value =
+        settings.features.bait.derbyBaitTier;
     elements['bait-threshold'].value = settings.features.bait.restockThreshold;
     elements['bait-quantity'].value = settings.features.bait.purchaseQuantity;
     elements['bait-check-seconds'].value = settings.features.bait.checkIntervalMs / 1_000;
@@ -550,6 +555,10 @@ function collectSettings() {
             bait: {
                 enabled: elements['bait-enabled'].checked,
                 selectedBaitTier: integer('bait-tier'),
+                guildTournamentBaitTier: integer(
+                    'bait-guild-tournament-tier',
+                ),
+                derbyBaitTier: integer('bait-derby-tier'),
                 restockThreshold: integer('bait-threshold'),
                 purchaseQuantity: integer('bait-quantity'),
                 checkIntervalMs: integer('bait-check-seconds') * 1_000,

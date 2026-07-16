@@ -18,6 +18,7 @@ const CAST_DELAY_TIERS = Object.freeze([
         label: '短暂停顿',
     },
 ]);
+export const NO_FISH_REFRESH_MS = 3 * 60_000;
 
 export function selectCastDelay(fishingSettings, {
     chance = Math.random,
@@ -71,16 +72,18 @@ export async function waitForCastDelay(durationMs, {
 }
 
 export class FishingFeature {
-    constructor({ session, settings, reporter }) {
+    constructor({ session, settings, reporter, now = Date.now }) {
         this.id = 'fishing';
         this.label = '自动钓鱼';
         this.priority = 100;
         this.session = session;
         this.settings = settings;
         this.reporter = reporter;
+        this.now = now;
         this.initialized = false;
         this.lastClassicSetting = null;
-        this.lastProgressAt = Date.now();
+        this.lastProgressAt = this.now();
+        this.noFishWatchStartedAt = this.now();
     }
 
     isEnabled(settings) {
@@ -90,7 +93,8 @@ export class FishingFeature {
     reset() {
         this.initialized = false;
         this.lastClassicSetting = null;
-        this.lastProgressAt = Date.now();
+        this.lastProgressAt = this.now();
+        this.noFishWatchStartedAt = this.now();
     }
 
     async initialize(settings) {
@@ -99,7 +103,8 @@ export class FishingFeature {
         await this.session.ensureClassicCastMode(enforceClassicMode);
         this.initialized = true;
         this.lastClassicSetting = enforceClassicMode;
-        this.lastProgressAt = Date.now();
+        this.lastProgressAt = this.now();
+        this.noFishWatchStartedAt = this.now();
 
         await this.reporter.update({
             level: 'running',
@@ -112,7 +117,7 @@ export class FishingFeature {
 
     async tick(settings) {
         if (await this.session.dismissBlockingOverlays()) {
-            this.lastProgressAt = Date.now();
+            this.lastProgressAt = this.now();
             return true;
         }
 
@@ -139,6 +144,27 @@ export class FishingFeature {
 
         if (!(await this.session.isFishingPage())) {
             await this.session.navigateToSidebarPage('fishing');
+        }
+
+        const lastSuccessfulCastAt = Number(
+            this.session.getLastSuccessfulCastAt?.(),
+        );
+        const lastFishProgressAt = Number.isFinite(lastSuccessfulCastAt)
+            ? Math.max(this.noFishWatchStartedAt, lastSuccessfulCastAt)
+            : this.noFishWatchStartedAt;
+
+        if (this.now() - lastFishProgressAt >= NO_FISH_REFRESH_MS) {
+            await this.reporter.update({
+                level: 'waiting',
+                phase: 'fishing',
+                target: '刷新停滞的钓鱼页面',
+                activeFeature: this.label,
+                message: '连续 3 分钟没有收到成功鱼获，正在刷新页面恢复自动钓鱼。',
+            });
+            await this.session.captureScreenshot('no-fish-timeout');
+            await this.session.bootstrap({ reload: true });
+            this.reset();
+            return true;
         }
 
         const castButton = await this.session.getReadyCastButton();
@@ -177,7 +203,7 @@ export class FishingFeature {
                 await castButton.isEnabled()
             ) {
                 await this.session.trustedClick(castButton);
-                this.lastProgressAt = Date.now();
+                this.lastProgressAt = this.now();
                 await this.reporter.incrementCast();
 
                 await castButton.waitFor({
@@ -186,7 +212,7 @@ export class FishingFeature {
                 }).catch(() => {});
             }
         } else if (
-            Date.now() - this.lastProgressAt >=
+            this.now() - this.lastProgressAt >=
                 settings.advanced.stallTimeoutMs
         ) {
             await this.session.captureScreenshot('stalled');

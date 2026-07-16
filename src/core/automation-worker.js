@@ -49,7 +49,9 @@ function describeRuntime(settings, profile) {
 
     if (settings.features.bait.enabled) {
         details.push(
-            `目标鱼饵档位=${settings.features.bait.selectedBaitTier}`,
+            `普通鱼饵档位=${settings.features.bait.selectedBaitTier}`,
+            `公会赛鱼饵档位=${settings.features.bait.guildTournamentBaitTier}`,
+            `个人赛鱼饵档位=${settings.features.bait.derbyBaitTier}`,
             `补货阈值=${settings.features.bait.restockThreshold}`,
             `购买数量=${settings.features.bait.purchaseQuantity}`,
         );

@@ -9,6 +9,8 @@ import {
 } from '../src/core/settings-schema.js';
 import { SettingsStore } from '../src/core/settings-store.js';
 import {
+    FishingFeature,
+    NO_FISH_REFRESH_MS,
     selectCastDelay,
     waitForCastDelay,
 } from '../src/features/fishing-feature.js';
@@ -130,6 +132,67 @@ await waitForCastDelay(20_000, {
     now: () => currentTime,
 });
 assert.deepEqual(cancelledSleepChunks, [500]);
+assert.equal(NO_FISH_REFRESH_MS, 180_000);
+
+let fishingNow = 1_000;
+let lastSuccessfulCastAt = null;
+const recoveryActions = [];
+const recoveryReporter = {
+    state: null,
+    update: async function update(state) {
+        this.state = state;
+    },
+};
+const recoverySession = {
+    dismissBlockingOverlays: async () => false,
+    isCharacterPickerVisible: async () => false,
+    isGameShellVisible: async () => true,
+    ensureClassicCastMode: async () => {},
+    isFishingPage: async () => true,
+    getLastSuccessfulCastAt: () => lastSuccessfulCastAt,
+    getReadyCastButton: async () => null,
+    captureScreenshot: async reason => recoveryActions.push(
+        `screenshot:${reason}`,
+    ),
+    bootstrap: async options => recoveryActions.push(
+        `bootstrap:${options.reload}`,
+    ),
+};
+const recoverySettings = {
+    features: {
+        fishing: {
+            enabled: true,
+            enforceClassicMode: true,
+            clickDelayMinMs: 500,
+            clickDelayMaxMs: 2_000,
+        },
+    },
+    advanced: {
+        pollIntervalMs: 0,
+        stallTimeoutMs: 1_000_000,
+    },
+};
+const recoveryFeature = new FishingFeature({
+    session: recoverySession,
+    settings: { get: () => recoverySettings },
+    reporter: recoveryReporter,
+    now: () => fishingNow,
+});
+
+await recoveryFeature.tick(recoverySettings);
+lastSuccessfulCastAt = 120_000;
+fishingNow = lastSuccessfulCastAt + NO_FISH_REFRESH_MS - 1;
+await recoveryFeature.tick(recoverySettings);
+assert.deepEqual(recoveryActions, []);
+
+fishingNow += 1;
+await recoveryFeature.tick(recoverySettings);
+assert.deepEqual(recoveryActions, [
+    'screenshot:no-fish-timeout',
+    'bootstrap:true',
+]);
+assert.equal(recoveryReporter.state.target, '刷新停滞的钓鱼页面');
+assert.match(recoveryReporter.state.message, /连续 3 分钟/);
 
 const tempDirectory = await fs.mkdtemp(path.join(
     os.tmpdir(),
@@ -142,6 +205,9 @@ try {
 
     legacySettings.features.fishing.clickDelayMinMs = 250;
     legacySettings.features.fishing.clickDelayMaxMs = 800;
+    legacySettings.features.bait.selectedBaitTier = 3;
+    delete legacySettings.features.bait.guildTournamentBaitTier;
+    delete legacySettings.features.bait.derbyBaitTier;
     delete legacySettings.features.map.prioritizeTournament;
     delete legacySettings.features.worldBoss;
     await fs.writeFile(filePath, JSON.stringify({
@@ -162,6 +228,11 @@ try {
         true,
     );
     assert.equal(snapshot.settings.features.worldBoss.enabled, true);
+    assert.equal(
+        snapshot.settings.features.bait.guildTournamentBaitTier,
+        3,
+    );
+    assert.equal(snapshot.settings.features.bait.derbyBaitTier, 3);
 
     const persisted = JSON.parse(await fs.readFile(filePath, 'utf8'));
 
@@ -173,6 +244,11 @@ try {
         true,
     );
     assert.equal(persisted.settings.features.worldBoss.enabled, true);
+    assert.equal(
+        persisted.settings.features.bait.guildTournamentBaitTier,
+        3,
+    );
+    assert.equal(persisted.settings.features.bait.derbyBaitTier, 3);
 
     const customSettings = structuredClone(DEFAULT_SETTINGS);
 
@@ -201,5 +277,5 @@ try {
 }
 
 console.log(
-    'Fishing smoke passed: delay tiers, competition override, defaults and legacy migration work.',
+    'Fishing smoke passed: delay tiers, competition override, no-fish refresh and legacy migration work.',
 );

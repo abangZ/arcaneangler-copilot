@@ -46,6 +46,7 @@ try {
             observedCast = result;
         },
     });
+    assert.equal(session.getLastSuccessfulCastAt(), null);
     await session.collectCastResponse({
         request: () => ({ method: () => 'POST' }),
         url: () => 'https://arcaneangler.com/api/game/cast',
@@ -66,6 +67,7 @@ try {
         equippedBait: 'bait-2',
         baitQuantity: 87,
     });
+    assert.ok(Number.isFinite(session.getLastSuccessfulCastAt()));
     const knownBait = session.getKnownBaitQuantity('bait-2');
 
     assert.equal(knownBait.quantity, 87);

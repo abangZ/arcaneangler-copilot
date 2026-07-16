@@ -1,3 +1,29 @@
+import { COMPETITION_TYPES } from '../core/competition-schedule.js';
+
+export function selectBaitTier(baitSettings, competition = null) {
+    if (competition?.type === COMPETITION_TYPES.GUILD_TOURNAMENT) {
+        return baitSettings.guildTournamentBaitTier;
+    }
+
+    if (competition?.type === COMPETITION_TYPES.DERBY) {
+        return baitSettings.derbyBaitTier;
+    }
+
+    return baitSettings.selectedBaitTier;
+}
+
+function describeBaitUsage(competition) {
+    if (competition?.type === COMPETITION_TYPES.GUILD_TOURNAMENT) {
+        return '公会赛';
+    }
+
+    if (competition?.type === COMPETITION_TYPES.DERBY) {
+        return '个人赛';
+    }
+
+    return '普通挂机';
+}
+
 export class BaitFeature {
     constructor({ session, reporter }) {
         this.id = 'bait';
@@ -18,9 +44,12 @@ export class BaitFeature {
         this.lastConfigurationKey = null;
     }
 
-    refreshConfiguration(settings) {
+    refreshConfiguration(settings, competition) {
         const baitSettings = settings.features.bait;
-        const configurationKey = JSON.stringify(baitSettings);
+        const configurationKey = JSON.stringify({
+            baitSettings,
+            competitionType: competition?.type || null,
+        });
 
         if (configurationKey !== this.lastConfigurationKey) {
             this.lastConfigurationKey = configurationKey;
@@ -45,7 +74,16 @@ export class BaitFeature {
     }
 
     async tick(settings) {
-        const baitSettings = this.refreshConfiguration(settings);
+        const competition = this.session.getActiveCompetition?.() || null;
+        const baitSettings = this.refreshConfiguration(
+            settings,
+            competition,
+        );
+        const selectedBaitTier = selectBaitTier(
+            baitSettings,
+            competition,
+        );
+        const baitUsage = describeBaitUsage(competition);
 
         if (Date.now() < this.nextCheckAt) {
             return false;
@@ -74,13 +112,13 @@ export class BaitFeature {
         const availableBaits = catalog
             .map((bait, tier) => `${tier}: ${bait.name}`)
             .join('、');
-        const targetBait = catalog[baitSettings.selectedBaitTier];
+        const targetBait = catalog[selectedBaitTier];
 
         if (!targetBait) {
             this.scheduleNextCheck(baitSettings.checkIntervalMs);
             await this.reportWaiting(
                 '等待目标鱼饵档位可用',
-                `鱼饵档位 ${baitSettings.selectedBaitTier} 不适用于当前 Biome ${biomeId}。当前可选：${availableBaits || '无'}。`,
+                `${baitUsage}鱼饵档位 ${selectedBaitTier} 不适用于当前 Biome ${biomeId}。当前可选：${availableBaits || '无'}。`,
             );
             return false;
         }

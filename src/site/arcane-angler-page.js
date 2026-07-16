@@ -195,6 +195,7 @@ export class ArcaneAnglerPage {
         this.competitionSchedule = [];
         this.baitQuantities = new Map();
         this.equippedBaitId = null;
+        this.lastSuccessfulCastAt = null;
         this.attachPage(page);
     }
 
@@ -224,6 +225,10 @@ export class ArcaneAnglerPage {
 
     getActiveCompetition() {
         return findActiveCompetition(this.competitionSchedule);
+    }
+
+    getLastSuccessfulCastAt() {
+        return this.lastSuccessfulCastAt;
     }
 
     rememberBaitQuantity(baitId, quantity, { equipped = false } = {}) {
@@ -308,6 +313,7 @@ export class ArcaneAnglerPage {
                 payload.result &&
                 typeof payload.result === 'object'
             ) {
+                this.lastSuccessfulCastAt = Date.now();
                 this.rememberBaitQuantity(
                     payload.result.equippedBait,
                     payload.result.baitQuantity,

@@ -265,6 +265,8 @@ try {
         assert.match(pageHtml, /data-view="logs"/);
         assert.match(pageHtml, /id="settings-view"/);
         assert.match(pageHtml, /id="prioritize-tournament"/);
+        assert.match(pageHtml, /id="bait-guild-tournament-tier"/);
+        assert.match(pageHtml, /id="bait-derby-tier"/);
         assert.match(pageHtml, /id="world-boss-enabled"/);
         assert.match(pageHtml, /id="current-bait-name"/);
         assert.match(pageHtml, /id="current-bait-fish-gold"/);
@@ -392,6 +394,8 @@ try {
         configuredSettings.features.map.mode = 'auto';
         configuredSettings.features.bait.enabled = true;
         configuredSettings.features.bait.selectedBaitTier = 2;
+        configuredSettings.features.bait.guildTournamentBaitTier = 3;
+        configuredSettings.features.bait.derbyBaitTier = 4;
 
         result = await requestJson(origin, '/api/settings', {
             method: 'PUT',
@@ -465,6 +469,18 @@ try {
                     '已连接',
             ));
             assert.deepEqual(pageErrors, []);
+
+            await page.locator('#settings-button').click();
+            assert.equal(
+                await page.locator('#bait-guild-tournament-tier')
+                    .inputValue(),
+                '3',
+            );
+            assert.equal(
+                await page.locator('#bait-derby-tier').inputValue(),
+                '4',
+            );
+            await page.locator('#settings-back').click();
 
             const startResponse = page.waitForResponse(response =>
                 new URL(response.url()).pathname === '/api/actions/start',
@@ -690,6 +706,15 @@ try {
         assert.equal(
             reloadedStore.get().settings.features.bait.selectedBaitTier,
             2,
+        );
+        assert.equal(
+            reloadedStore.get().settings.features.bait
+                .guildTournamentBaitTier,
+            3,
+        );
+        assert.equal(
+            reloadedStore.get().settings.features.bait.derbyBaitTier,
+            4,
         );
         assert.equal(
             reloadedStore.get().settings.schedule.activeMinMinutes,

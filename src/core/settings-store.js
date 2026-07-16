@@ -16,6 +16,7 @@ function migrateLegacyDefaults(settings) {
     const fishing = settings?.features?.fishing;
     const map = settings?.features?.map;
     const worldBoss = settings?.features?.worldBoss;
+    const bait = settings?.features?.bait;
     let migrated = settings;
 
     if (
@@ -45,6 +46,29 @@ function migrateLegacyDefaults(settings) {
         migrated.features.worldBoss = clone(
             DEFAULT_SETTINGS.features.worldBoss,
         );
+    }
+
+    if (
+        bait &&
+        (
+            !Object.hasOwn(bait, 'guildTournamentBaitTier') ||
+            !Object.hasOwn(bait, 'derbyBaitTier')
+        )
+    ) {
+        if (migrated === settings) {
+            migrated = clone(settings);
+        }
+
+        const legacyBaitTier = Number.isSafeInteger(bait.selectedBaitTier)
+            ? bait.selectedBaitTier
+            : DEFAULT_SETTINGS.features.bait.selectedBaitTier;
+
+        if (!Object.hasOwn(bait, 'guildTournamentBaitTier')) {
+            migrated.features.bait.guildTournamentBaitTier = legacyBaitTier;
+        }
+        if (!Object.hasOwn(bait, 'derbyBaitTier')) {
+            migrated.features.bait.derbyBaitTier = legacyBaitTier;
+        }
     }
 
     return migrated;

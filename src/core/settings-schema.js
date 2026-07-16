@@ -42,6 +42,8 @@ export const DEFAULT_SETTINGS = deepFreeze({
         bait: {
             enabled: false,
             selectedBaitTier: 0,
+            guildTournamentBaitTier: 0,
+            derbyBaitTier: 0,
             restockThreshold: 100,
             purchaseQuantity: 1_000,
             checkIntervalMs: 30_000,
@@ -198,6 +200,8 @@ export function validateSettings(input) {
     expectKnownKeys(bait, [
         'enabled',
         'selectedBaitTier',
+        'guildTournamentBaitTier',
+        'derbyBaitTier',
         'restockThreshold',
         'purchaseQuantity',
         'checkIntervalMs',
@@ -311,7 +315,17 @@ export function validateSettings(input) {
                 enabled: readBoolean(bait.enabled, '自动鱼饵开关'),
                 selectedBaitTier: readInteger(
                     bait.selectedBaitTier,
-                    '鱼饵档位',
+                    '普通鱼饵档位',
+                    { max: 4 },
+                ),
+                guildTournamentBaitTier: readInteger(
+                    bait.guildTournamentBaitTier,
+                    '公会赛鱼饵档位',
+                    { max: 4 },
+                ),
+                derbyBaitTier: readInteger(
+                    bait.derbyBaitTier,
+                    '个人赛鱼饵档位',
                     { max: 4 },
                 ),
                 restockThreshold: readInteger(

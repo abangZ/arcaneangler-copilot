@@ -5,7 +5,10 @@ import { chromium } from 'playwright';
 
 import { createBrowserProfile } from '../src/core/browser-profile.js';
 import { StatusReporter } from '../src/core/status-reporter.js';
-import { BaitFeature } from '../src/features/bait-feature.js';
+import {
+    BaitFeature,
+    selectBaitTier,
+} from '../src/features/bait-feature.js';
 import { ArcaneAnglerPage } from '../src/site/arcane-angler-page.js';
 
 const artifactsDir = await fs.mkdtemp('/tmp/arcaneangler-bait-smoke-');
@@ -289,12 +292,26 @@ try {
             bait: {
                 enabled: true,
                 selectedBaitTier: 1,
+                guildTournamentBaitTier: 2,
+                derbyBaitTier: 3,
                 restockThreshold: 100,
                 purchaseQuantity: 100,
                 checkIntervalMs: 30_000,
             },
         },
     };
+
+    assert.equal(selectBaitTier(settingsSnapshot.features.bait), 1);
+    assert.equal(selectBaitTier(settingsSnapshot.features.bait, {
+        type: 'guild-tournament',
+    }), 2);
+    assert.equal(selectBaitTier(settingsSnapshot.features.bait, {
+        type: 'derby',
+    }), 3);
+    assert.equal(selectBaitTier(settingsSnapshot.features.bait, {
+        type: 'world-boss',
+    }), 1);
+
     const feature = new BaitFeature({ session, reporter });
 
     assert.equal(await feature.tick(settingsSnapshot), true);
