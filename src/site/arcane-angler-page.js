@@ -372,7 +372,36 @@ export class ArcaneAnglerPage {
         }, { currentBiome: biomeId, equippedBait: baitId });
     }
 
+    async getCurrentWorldBossResponse({ optional = false } = {}) {
+        try {
+            return await this.page.evaluate(async () => {
+                const api = window.ApiService;
+
+                if (typeof api?.getCurrentAnomaly === 'function') {
+                    return api.getCurrentAnomaly();
+                }
+
+                if (typeof api?.request === 'function') {
+                    return api.request('/anomalies/current', {
+                        method: 'GET',
+                    });
+                }
+
+                throw new Error('页面未提供世界 Boss 状态接口。');
+            });
+        } catch (error) {
+            if (optional) {
+                return {};
+            }
+
+            throw error;
+        }
+    }
+
     async getDashboardSnapshot() {
+        const anomalyResponsePromise = this.getCurrentWorldBossResponse({
+            optional: true,
+        });
         const snapshot = await this.page.evaluate(async () => {
             if (!window.ApiService) {
                 throw new Error('页面未提供 ApiService。');
@@ -384,7 +413,6 @@ export class ArcaneAnglerPage {
                 derbyResponse,
                 tournamentResponse,
                 guildResponse,
-                anomalyResponse,
             ] = await Promise.all([
                 window.ApiService.getPlayerData(),
                 window.ApiService.getAllBiomeWeather().catch(() => ({})),
@@ -392,8 +420,6 @@ export class ArcaneAnglerPage {
                 window.ApiService.getCurrentTournaments?.().catch(() => ({})) ||
                     Promise.resolve({}),
                 window.ApiService.getMyGuild?.().catch(() => ({})) ||
-                    Promise.resolve({}),
-                window.ApiService.getCurrentAnomaly?.().catch(() => ({})) ||
                     Promise.resolve({}),
             ]);
             const player = playerResponse?.player || playerResponse;
@@ -618,7 +644,6 @@ export class ArcaneAnglerPage {
 
             return {
                 playerUserId,
-                anomalyResponse,
                 level: Number(player?.level),
                 xp: Number(player?.xp),
                 xpToNext: Number(player?.xpToNext),
@@ -716,6 +741,7 @@ export class ArcaneAnglerPage {
                 competitions,
             };
         });
+        const anomalyResponse = await anomalyResponsePromise;
         const normalizedNumber = (value, { positive = false } = {}) => {
             const number = Number(value);
 
@@ -725,7 +751,7 @@ export class ArcaneAnglerPage {
         };
 
         const worldBossState = normalizeWorldBossResponse(
-            snapshot.anomalyResponse,
+            anomalyResponse,
             snapshot.playerUserId,
         );
         const competitions = this.rememberCompetitionSchedule([
@@ -1311,13 +1337,7 @@ export class ArcaneAnglerPage {
     }
 
     async getWorldBossAutomationState() {
-        const response = await this.page.evaluate(async () => {
-            if (typeof window.ApiService?.getCurrentAnomaly !== 'function') {
-                throw new Error('页面未提供世界 Boss 状态接口。');
-            }
-
-            return window.ApiService.getCurrentAnomaly();
-        });
+        const response = await this.getCurrentWorldBossResponse();
         const state = normalizeWorldBossResponse(response);
 
         this.rememberCompetitionSchedule(

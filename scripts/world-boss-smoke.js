@@ -95,7 +95,12 @@ try {
 
             window.BIOMES = { 1: { name: 'Map 1' } };
             window.BAITS = [{ id: 'bait-1', name: 'River Grub', price: 12 }];
-            window.worldBossSmoke = { response, attacks: [], trusted: [] };
+            window.worldBossSmoke = {
+                response,
+                attacks: [],
+                trusted: [],
+                fallbackRequests: [],
+            };
             window.ApiService = {
                 async getPlayerData() {
                     return {
@@ -231,8 +236,42 @@ try {
         '2026-07-17T01:23:24.000Z',
     );
 
+    await page.evaluate(() => {
+        window.worldBossSmoke.response = {
+            active: false,
+            nextSpawnTime: '2026-07-18T02:34:56.000Z',
+        };
+        window.ApiService.getCurrentAnomaly = undefined;
+        window.ApiService.request = async (pathname, options) => {
+            window.worldBossSmoke.fallbackRequests.push({
+                pathname,
+                method: options?.method,
+            });
+            return structuredClone(window.worldBossSmoke.response);
+        };
+    });
+
+    const fallbackDashboard = await session.getDashboardSnapshot();
+    const fallbackAutomation = await session.getWorldBossAutomationState();
+    const fallbackRequests = await page.evaluate(() =>
+        window.worldBossSmoke.fallbackRequests,
+    );
+
+    assert.equal(
+        fallbackDashboard.worldBoss.startAt,
+        '2026-07-18T02:34:56.000Z',
+    );
+    assert.equal(
+        fallbackAutomation.startAt,
+        '2026-07-18T02:34:56.000Z',
+    );
+    assert.deepEqual(fallbackRequests, [
+        { pathname: '/anomalies/current', method: 'GET' },
+        { pathname: '/anomalies/current', method: 'GET' },
+    ]);
+
     console.log(
-        'World boss smoke passed: schedule, dashboard and trusted weak-point attacks work.',
+        'World boss smoke passed: schedule, dashboard, API fallback and trusted weak-point attacks work.',
     );
 } finally {
     await browser.close();
