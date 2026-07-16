@@ -756,10 +756,22 @@ export class ArcaneAnglerPage {
             const activeTournamentId = String(
                 tournamentResponse?.active?.id ?? '',
             );
+            const now = Date.now();
+            const isTournamentActive = tournament => {
+                const startAt = Date.parse(tournament?.start_time);
+                const endAt = Date.parse(tournament?.end_time);
+
+                return String(tournament?.id) === activeTournamentId || (
+                    Number.isFinite(startAt) &&
+                    Number.isFinite(endAt) &&
+                    startAt <= now &&
+                    now < endAt
+                );
+            };
             const selectedTournament = participatingTournaments
                 .map(tournament => ({
                     ...tournament,
-                    status: String(tournament?.id) === activeTournamentId
+                    status: isTournamentActive(tournament)
                         ? 'active'
                         : 'upcoming',
                 }))
@@ -1773,7 +1785,6 @@ export class ArcaneAnglerPage {
                 });
             }
 
-            const activeTournament = tournamentResponse?.active || null;
             const registeredDerbies = [
                 ...(active?.is_registered ? [active] : []),
                 ...upcoming.filter(derby => derby?.is_registered),
@@ -1783,6 +1794,21 @@ export class ArcaneAnglerPage {
                     String(tournament?.id),
                 ),
             );
+            const activeTournamentId = String(
+                tournamentResponse?.active?.id ?? '',
+            );
+            const now = Date.now();
+            const activeTournament = participatingTournaments.find(
+                tournament => String(tournament?.id) === activeTournamentId,
+            ) || participatingTournaments.find(tournament => {
+                const startAt = Date.parse(tournament?.start_time);
+                const endAt = Date.parse(tournament?.end_time);
+
+                return Number.isFinite(startAt) &&
+                    Number.isFinite(endAt) &&
+                    startAt <= now &&
+                    now < endAt;
+            }) || null;
             const biomes = Object.fromEntries(
                 Object.entries(window.BIOMES || {}).map(([id, biome]) => [
                     Number(id),

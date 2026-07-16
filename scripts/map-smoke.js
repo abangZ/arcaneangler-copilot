@@ -402,6 +402,30 @@ try {
             fishCaught: 19,
         },
     });
+    await page.evaluate(() => {
+        const tournament = window.mapSmoke.tournaments.active;
+
+        tournament.start_time = new Date(Date.now() - 60_000).toISOString();
+        tournament.end_time = new Date(Date.now() + 60_000).toISOString();
+        window.mapSmoke.tournaments.active = null;
+        window.mapSmoke.tournaments.upcoming.unshift(tournament);
+    });
+    const delayedTournamentState = await session.getMapAutomationState();
+    const delayedTournamentDashboard = await session.getDashboardSnapshot();
+    const delayedTournamentTarget = feature.selectTarget(
+        { mode: 'auto', prioritizeTournament: true },
+        delayedTournamentState,
+    );
+
+    assert.equal(delayedTournamentState.activeTournament.id, 226);
+    assert.equal(delayedTournamentState.activeTournament.isRegistered, true);
+    assert.equal(delayedTournamentDashboard.tournament.status, 'active');
+    assert.deepEqual(delayedTournamentDashboard.tournament.standing, {
+        rank: 2,
+        points: 15_000,
+        fishCaught: 19,
+    });
+    assert.equal(delayedTournamentTarget.biomeId, 12);
     assert.equal(
         dashboard.competitions.filter(item =>
             item.type === 'guild-tournament',
