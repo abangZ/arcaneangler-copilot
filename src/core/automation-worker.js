@@ -168,8 +168,11 @@ export class AutomationWorker {
     async updateDashboardSnapshotFromCast(result, context) {
         const previous = this.dashboardSnapshot || {};
         const previousBiome = previous.biome;
+        const previousBait = previous.bait;
         const biomeChanged = context?.biomeId &&
             context.biomeId !== previousBiome?.id;
+        const baitChanged = context?.baitId &&
+            context.baitId !== previousBait?.id;
         const snapshot = {
             level: finiteNumber(result?.newLevel, previous.level),
             xp: finiteNumber(result?.newXP, previous.xp),
@@ -192,6 +195,12 @@ export class AutomationWorker {
                     ) && Number(result?.baitQuantity) >= 0
                         ? Number(result.baitQuantity)
                         : previous.bait?.quantity ?? null,
+                    biome: context.baitBiome ||
+                        (baitChanged ? null : previousBait?.biome) || null,
+                    tier: context.baitTier ??
+                        (baitChanged ? null : previousBait?.tier) ?? null,
+                    luck: context.baitLuck ??
+                        (baitChanged ? null : previousBait?.luck) ?? null,
                 }
                 : previous.bait || null,
             worldBoss: previous.worldBoss || null,

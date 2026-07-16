@@ -224,7 +224,14 @@ try {
                     return [id, { name: id === 12 ? 'Biome Twelve' : 'Map ' + id }];
                 }),
             );
-            window.BAITS = [{ id: 'bait-1', name: 'River Grub', price: 12 }];
+            window.BAITS = [{
+                id: 'bait-1',
+                name: 'River Grub',
+                price: 12,
+                biome_id: 1,
+                tier: 'high',
+                luck: 500,
+            }];
             window.ApiService = {
                 async getPlayerData() {
                     return structuredClone(state.player);
@@ -383,6 +390,9 @@ try {
         name: 'River Grub',
         price: 12,
         quantity: 73,
+        biome: { id: '1', name: 'Map 1' },
+        tier: 'high',
+        luck: 500,
     });
     assert.deepEqual(dashboard.tournament, {
         status: 'active',

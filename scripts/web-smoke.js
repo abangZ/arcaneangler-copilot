@@ -178,6 +178,9 @@ function createFakeWorker() {
                     id: 'bait-3',
                     name: 'Lake Minnow',
                     price: 15,
+                    biome: { id: '3', name: 'Map 3' },
+                    tier: 'high',
+                    luck: 500,
                 },
                 worldBoss: {
                     status: 'active',
@@ -463,6 +466,9 @@ try {
         assert.match(pageHtml, /id="bait-derby-tier"/);
         assert.match(pageHtml, /id="world-boss-enabled"/);
         assert.match(pageHtml, /id="current-bait-name"/);
+        assert.match(pageHtml, /id="current-bait-biome"/);
+        assert.match(pageHtml, /id="current-bait-tier"/);
+        assert.match(pageHtml, /id="current-bait-luck"/);
         assert.match(pageHtml, /id="current-bait-fish-gold"/);
         assert.match(pageHtml, /id="current-bait-rarity-list"/);
         assert.match(pageHtml, /id="player-level"/);
@@ -698,6 +704,30 @@ try {
                 document.getElementById('world-boss-title')?.textContent ===
                     'Abyssal Maw',
             );
+            assert.equal(
+                await page.locator('#current-bait-biome').textContent(),
+                'B3 · Map 3',
+            );
+            assert.equal(
+                await page.locator('#current-bait-tier').textContent(),
+                '等级 3 · 高级',
+            );
+            assert.match(
+                await page.locator('#current-bait-tier')
+                    .getAttribute('class'),
+                /tier-high/,
+            );
+            assert.equal(
+                await page.locator('#current-bait-luck').textContent(),
+                '幸运 +500',
+            );
+            const baitMetaColors = await page.locator(
+                '#current-bait-biome, #current-bait-tier, #current-bait-luck',
+            ).evaluateAll(items => items.map(item =>
+                getComputedStyle(item).color,
+            ));
+
+            assert.equal(new Set(baitMetaColors).size, 3);
             assert.equal(
                 await page.locator('#world-boss-status').textContent(),
                 '战斗中',

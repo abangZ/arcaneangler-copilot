@@ -467,6 +467,14 @@ export class ArcaneAnglerPage {
             }
 
             const price = Number(bait?.price);
+            const baitBiomeId = String(bait?.biome_id ?? '').trim();
+            const baitBiome = baitBiomeId && baitBiomeId !== 'global'
+                ? window.BIOMES?.[baitBiomeId] || null
+                : null;
+            const luck = Number(bait?.luck);
+            const tier = String(
+                bait?.tier || (baitBiomeId === 'global' ? 'default' : ''),
+            ).trim();
 
             return {
                 biomeId: currentBiome,
@@ -477,6 +485,17 @@ export class ArcaneAnglerPage {
                 baitPrice: Number.isFinite(price) && price >= 0
                     ? price
                     : null,
+                baitBiome: baitBiomeId
+                    ? {
+                        id: baitBiomeId,
+                        name: baitBiomeId === 'global'
+                            ? '全地图'
+                            : String(baitBiome?.name || '').trim() ||
+                                `地图 ${baitBiomeId}`,
+                    }
+                    : null,
+                baitTier: tier || null,
+                baitLuck: Number.isFinite(luck) && luck >= 0 ? luck : null,
             };
         }, { currentBiome: biomeId, equippedBait: baitId });
     }
@@ -727,6 +746,14 @@ export class ArcaneAnglerPage {
 
             const baitPrice = Number(bait?.price);
             const baitQuantity = Number(player?.baitInventory?.[baitId]);
+            const baitBiomeId = String(bait?.biome_id ?? '').trim();
+            const baitBiome = baitBiomeId && baitBiomeId !== 'global'
+                ? window.BIOMES?.[baitBiomeId] || null
+                : null;
+            const baitLuck = Number(bait?.luck);
+            const baitTier = String(
+                bait?.tier || (baitBiomeId === 'global' ? 'default' : ''),
+            ).trim();
             const activeDerby = derbyResponse?.active;
             const now = Date.now();
             const registeredUpcomingDerbies = (Array.isArray(
@@ -930,6 +957,20 @@ export class ArcaneAnglerPage {
                         quantity: Number.isSafeInteger(baitQuantity) &&
                             baitQuantity >= 0
                             ? baitQuantity
+                            : null,
+                        biome: baitBiomeId
+                            ? {
+                                id: baitBiomeId,
+                                name: baitBiomeId === 'global'
+                                    ? '全地图'
+                                    : String(
+                                        baitBiome?.name || '',
+                                    ).trim() || `地图 ${baitBiomeId}`,
+                            }
+                            : null,
+                        tier: baitTier || null,
+                        luck: Number.isFinite(baitLuck) && baitLuck >= 0
+                            ? baitLuck
                             : null,
                     }
                     : null,

@@ -10,7 +10,9 @@ const elementIds = [
     'worker-mode', 'status-dot', 'status-message',
     'start-button', 'pause-button', 'resume-button', 'stop-button',
     'today-casts', 'today-gold', 'today-xp', 'today-fish',
-    'current-bait-name', 'current-bait-context', 'current-bait-start',
+    'current-bait-name', 'current-bait-meta', 'current-bait-biome',
+    'current-bait-tier', 'current-bait-luck', 'current-bait-context',
+    'current-bait-start',
     'current-bait-casts', 'current-bait-fish', 'current-bait-gold',
     'current-bait-fish-gold', 'current-bait-bait-cost',
     'current-bait-net-gold', 'current-bait-xp', 'current-bait-relics',
@@ -153,6 +155,13 @@ const DERBY_TYPE_LABELS = Object.freeze({
     ironman: '铁人赛',
 });
 const TOURNAMENT_TYPE_LABELS = DERBY_TYPE_LABELS;
+const BAIT_TIER_DISPLAY = Object.freeze({
+    default: { level: 0, label: '基础', tone: 'default' },
+    low: { level: 1, label: '初级', tone: 'low' },
+    medium: { level: 2, label: '中级', tone: 'medium' },
+    high: { level: 3, label: '高级', tone: 'high' },
+    super: { level: 4, label: '顶级', tone: 'super' },
+});
 const WORLD_BOSS_STAT_LABELS = Object.freeze({
     strength: '力量',
     intelligence: '智力',
@@ -1224,11 +1233,43 @@ function renderOverview() {
     const biomeName = dashboard?.biome?.name ||
         currentSummary.biomeName ||
         fallbackCurrentBait?.biomeName;
+    const baitBiome = dashboard?.bait?.biome;
+    const baitTier = BAIT_TIER_DISPLAY[String(
+        dashboard?.bait?.tier || '',
+    ).toLowerCase()] || null;
+    const baitLuck = Number(dashboard?.bait?.luck);
+    const hasBaitBiome = Boolean(baitId && baitBiome?.name);
+    const hasBaitTier = Boolean(baitId && baitTier);
+    const hasBaitLuck = Boolean(
+        baitId && dashboard?.bait?.luck != null && Number.isFinite(baitLuck),
+    );
 
     elements['current-bait-name'].textContent = baitName || '暂无鱼饵数据';
+    elements['current-bait-meta'].hidden = !(
+        hasBaitBiome || hasBaitTier || hasBaitLuck
+    );
+    elements['current-bait-biome'].hidden = !hasBaitBiome;
+    elements['current-bait-biome'].textContent = hasBaitBiome
+        ? baitBiome.id === 'global'
+            ? baitBiome.name
+            : `B${baitBiome.id} · ${baitBiome.name}`
+        : '';
+    elements['current-bait-tier'].hidden = !hasBaitTier;
+    elements['current-bait-tier'].className = hasBaitTier
+        ? `bait-meta-chip tier-${baitTier.tone}`
+        : 'bait-meta-chip tier-default';
+    elements['current-bait-tier'].textContent = hasBaitTier
+        ? `等级 ${baitTier.level} · ${baitTier.label}`
+        : '';
+    elements['current-bait-luck'].hidden = !hasBaitLuck;
+    elements['current-bait-luck'].textContent = hasBaitLuck
+        ? `幸运 +${formatNumber(baitLuck, 0)}`
+        : '';
     elements['current-bait-context'].textContent = baitId
         ? [
-            biomeId && biomeName ? `[B${biomeId}] ${biomeName}` : biomeName,
+            biomeId && biomeName
+                ? `当前地图 [B${biomeId}] ${biomeName}`
+                : biomeName,
             baitPrice == null
                 ? '鱼饵成本未知'
                 : `单价 ${formatNumber(baitPrice)} 金币/竿`,
