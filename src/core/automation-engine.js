@@ -282,7 +282,7 @@ export class AutomationEngine {
             }
         } else if (!this.started) {
             await this.ensureStarted();
-        } else if (previousMode !== OPERATION_STATES.ACTIVE) {
+        } else if (previousMode !== gate.mode) {
             this.resetFeatures();
         }
 

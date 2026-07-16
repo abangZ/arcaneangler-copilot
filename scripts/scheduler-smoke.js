@@ -207,6 +207,7 @@ assert.equal(gate.resumeAt.getHours(), 9);
 let lifecycleNow = new Date(2026, 6, 16, 1, 0, 0, 0);
 const lifecycleEvents = [];
 let lifecycleCompetitions = [];
+let baitCheckDue = true;
 const lifecycleScheduler = new OperationScheduler(config, {
     now: () => new Date(lifecycleNow),
     random: min => min,
@@ -222,7 +223,10 @@ const engine = new AutomationEngine({
             automationEnabled: true,
             schedule: config,
             advanced: { pollIntervalMs: 1, recoveryErrorCount: 3 },
-            features: { fishing: { enabled: true } },
+            features: {
+                bait: { enabled: true },
+                fishing: { enabled: true },
+            },
         }),
     },
     reporter: {
@@ -244,13 +248,32 @@ engine.waitForSchedule = async gateState => {
     lifecycleEvents.push(`wait:${gateState.mode}`);
 };
 engine.register({
+    id: 'bait',
+    label: '自动鱼饵',
+    priority: 50,
+    isEnabled: () => true,
+    reset: () => {
+        baitCheckDue = true;
+        lifecycleEvents.push('reset:bait');
+    },
+    tick: async () => {
+        lifecycleEvents.push('tick:bait');
+        if (!baitCheckDue) {
+            return false;
+        }
+
+        baitCheckDue = false;
+        return true;
+    },
+});
+engine.register({
     id: 'fishing',
     label: '自动钓鱼',
     priority: 100,
     isEnabled: () => true,
-    reset: () => lifecycleEvents.push('reset'),
+    reset: () => lifecycleEvents.push('reset:fishing'),
     tick: async () => {
-        lifecycleEvents.push('tick');
+        lifecycleEvents.push('tick:fishing');
         return true;
     },
 });
@@ -258,7 +281,8 @@ engine.register({
 await engine.runCycle();
 assert.deepEqual(lifecycleEvents, [
     'suspend',
-    'reset',
+    'reset:bait',
+    'reset:fishing',
     `wait:${OPERATION_STATES.QUIET}`,
 ]);
 
@@ -281,30 +305,39 @@ lifecycleCompetitions = [{
     endAt: '2026-07-16T00:30:00.000Z',
 }];
 await engine.runCycle();
-assert.deepEqual(lifecycleEvents.slice(-5), [
+assert.deepEqual(lifecycleEvents.slice(-6), [
     'resume',
     'bootstrap',
     'snapshot',
-    'reset',
-    'tick',
+    'reset:bait',
+    'reset:fishing',
+    'tick:bait',
+]);
+
+await engine.runCycle();
+assert.deepEqual(lifecycleEvents.slice(-2), [
+    'tick:bait',
+    'tick:fishing',
 ]);
 
 lifecycleNow = new Date(2026, 6, 16, 8, 30, 0, 0);
 await engine.runCycle();
-assert.deepEqual(lifecycleEvents.slice(-3), [
+assert.deepEqual(lifecycleEvents.slice(-4), [
     'suspend',
-    'reset',
+    'reset:bait',
+    'reset:fishing',
     `wait:${OPERATION_STATES.QUIET}`,
 ]);
 
 lifecycleNow = new Date(2026, 6, 16, 9, 0, 0, 0);
 await engine.runCycle();
-assert.deepEqual(lifecycleEvents.slice(-5), [
+assert.deepEqual(lifecycleEvents.slice(-6), [
     'resume',
     'bootstrap',
     'snapshot',
-    'reset',
-    'tick',
+    'reset:bait',
+    'reset:fishing',
+    'tick:bait',
 ]);
 
 console.log(
