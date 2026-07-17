@@ -13,6 +13,7 @@ import {
     normalizeCompetitionSchedule,
 } from '../core/competition-schedule.js';
 import { AutomationPausedError } from '../core/operation-scheduler.js';
+import { SiteMaintenanceError } from '../core/site-availability.js';
 
 const WORLD_BOSS_WAKE_WINDOW_MS = 15 * 60_000;
 
@@ -2526,16 +2527,32 @@ export class ArcaneAnglerPage {
             timeout: this.config.navigationTimeoutMs,
         }).catch(() => {});
 
-        await waitUntil(async () => Boolean(
-            (await this.getPasswordInput()) ||
-            (await this.getLandingEntryButton()) ||
-            (await this.isCharacterPickerVisible()) ||
-            (await this.isGameShellVisible())
-        ), {
+        await waitUntil(async () => {
+            if (await this.isMaintenancePage()) {
+                throw new SiteMaintenanceError();
+            }
+
+            return Boolean(
+                (await this.getPasswordInput()) ||
+                (await this.getLandingEntryButton()) ||
+                (await this.isCharacterPickerVisible()) ||
+                (await this.isGameShellVisible())
+            );
+        }, {
             timeoutMs: this.config.navigationTimeoutMs,
             message: '页面加载后没有出现可识别的界面',
             shouldStop: this.shouldStop,
         });
+    }
+
+    async isMaintenancePage() {
+        const heading = this.page
+            .locator('h1, h2, [role="heading"]')
+            .filter({
+                hasText: /^\s*(under maintenance|维护中|系统维护)\s*$/i,
+            });
+
+        return Boolean(await firstVisible(heading));
     }
 
     async bootstrap({ reload = false } = {}) {

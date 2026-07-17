@@ -4,6 +4,9 @@ import {
     OPERATION_STATES,
     OperationScheduler,
 } from './operation-scheduler.js';
+import { SITE_MAINTENANCE_CODE } from './site-availability.js';
+
+const MAINTENANCE_RETRY_MS = 60_000;
 
 export class AutomationEngine {
     constructor({
@@ -27,6 +30,7 @@ export class AutomationEngine {
         this.pageSetupInProgress = false;
         this.scheduleMode = null;
         this.activeCompetition = null;
+        this.maintenanceRetryAt = 0;
     }
 
     register(feature) {
@@ -94,7 +98,33 @@ export class AutomationEngine {
         await this.onPageReady?.();
         this.resetFeatures();
         this.consecutiveErrors = 0;
+        this.maintenanceRetryAt = 0;
         this.started = true;
+    }
+
+    async deferForMaintenance(error) {
+        this.started = false;
+        this.consecutiveErrors = 0;
+        this.maintenanceRetryAt = Date.now() + MAINTENANCE_RETRY_MS;
+
+        await this.reporter.update({
+            level: 'waiting',
+            phase: 'page',
+            target: '等待站点维护结束',
+            message: `${error.message} 将在 1 分钟后重新检查。`,
+        });
+        await sleep(250);
+    }
+
+    async waitForMaintenanceRetry() {
+        const waitMs = this.maintenanceRetryAt - Date.now();
+
+        if (waitMs <= 0) {
+            return false;
+        }
+
+        await sleep(Math.min(waitMs, 5_000));
+        return true;
     }
 
     formatLocalTime(date) {
@@ -172,6 +202,7 @@ export class AutomationEngine {
         try {
             await this.session.bootstrap({ reload });
             await this.onPageReady?.();
+            this.maintenanceRetryAt = 0;
             this.started = true;
         } finally {
             this.pageSetupInProgress = false;
@@ -228,6 +259,10 @@ export class AutomationEngine {
         if (this.started && this.session.isClosed?.()) {
             this.started = false;
             throw new Error('Playwright 页面意外关闭。');
+        }
+
+        if (!this.started && await this.waitForMaintenanceRetry()) {
+            return;
         }
 
         if (!this.started && gate.mode === OPERATION_STATES.DISABLED) {
@@ -311,6 +346,11 @@ export class AutomationEngine {
                     continue;
                 }
 
+                if (error.code === SITE_MAINTENANCE_CODE) {
+                    await this.deferForMaintenance(error);
+                    continue;
+                }
+
                 this.consecutiveErrors += 1;
                 const settings = this.settings.get();
                 await this.reporter.update({
@@ -330,6 +370,11 @@ export class AutomationEngine {
                         if (recoveryError.code === AUTOMATION_PAUSED_CODE) {
                             this.consecutiveErrors = 0;
                             await sleep(250);
+                            continue;
+                        }
+
+                        if (recoveryError.code === SITE_MAINTENANCE_CODE) {
+                            await this.deferForMaintenance(recoveryError);
                             continue;
                         }
 

@@ -1,3 +1,5 @@
+import { SITE_MAINTENANCE_CODE } from './site-availability.js';
+
 export function sleep(milliseconds) {
     return new Promise(resolve => {
         setTimeout(resolve, milliseconds);
@@ -48,7 +50,10 @@ export async function waitUntil(
                 return;
             }
         } catch (error) {
-            if (error.name === 'AutomationPausedError') {
+            if (
+                error.name === 'AutomationPausedError' ||
+                error.code === SITE_MAINTENANCE_CODE
+            ) {
                 throw error;
             }
 
