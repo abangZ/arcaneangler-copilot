@@ -253,6 +253,9 @@ th, td { padding: 10px 8px; border-bottom: 1px solid var(--border); text-align: 
 th:first-child, td:first-child { text-align: left; }
 th { color: var(--muted); font-weight: 600; }
 tbody tr:last-child td { border-bottom: 0; }
+.table-label { min-width: 180px; }
+.table-label > span { display: block; }
+.table-label-detail { margin-top: 3px; color: var(--muted); font-size: 10px; white-space: nowrap; }
 
 .inline-field { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; }
 .inline-field select { width: 120px; }

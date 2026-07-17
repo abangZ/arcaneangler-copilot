@@ -964,7 +964,22 @@ function replaceTableRows(body, rows, { colspan, emptyMessage }) {
                 ? value.text
                 : value;
 
-            cell.textContent = content;
+            if (
+                value &&
+                typeof value === 'object' &&
+                value.detail
+            ) {
+                const label = document.createElement('span');
+                const detail = document.createElement('span');
+
+                cell.className = 'table-label';
+                label.textContent = content;
+                detail.className = 'table-label-detail';
+                detail.textContent = value.detail;
+                cell.append(label, detail);
+            } else {
+                cell.textContent = content;
+            }
             if (value && typeof value === 'object' && value.tone) {
                 cell.dataset.tone = value.tone;
             }
@@ -991,6 +1006,39 @@ function tableNumber(value, tone, maximumFractionDigits = 2) {
     return {
         text: formatNumber(value, maximumFractionDigits),
         tone: typeof tone === 'function' ? tone(Number(value) || 0) : tone,
+    };
+}
+
+function baitSummaryLabel(summary) {
+    const detail = [];
+    const baitBiome = summary.baitBiome;
+    const baitTier = BAIT_TIER_DISPLAY[String(summary.baitTier || '')];
+    const baitLuck = Number(summary.baitLuck);
+
+    if (baitBiome?.name) {
+        detail.push(
+            baitBiome.id === 'global'
+                ? baitBiome.name
+                : `B${baitBiome.id} · ${baitBiome.name}`,
+        );
+    }
+    if (baitTier) {
+        detail.push(`等级 ${baitTier.level} · ${baitTier.label}`);
+    }
+    if (summary.baitLuck != null && Number.isFinite(baitLuck)) {
+        detail.push(`幸运 +${formatNumber(baitLuck, 0)}`);
+    }
+
+    return {
+        text: summary.baitName || summary.baitId,
+        detail: detail.join(' · '),
+    };
+}
+
+function biomeSummaryLabel(summary) {
+    return {
+        text: summary.biomeName || `地图 ${summary.biomeId}`,
+        detail: summary.biomeId ? `层级 B${summary.biomeId}` : '',
     };
 }
 
@@ -1772,7 +1820,7 @@ function renderStats() {
     });
 
     const baitRows = (snapshot.baitSummaries || []).map(summary => [
-        summary.baitName || summary.baitId,
+        baitSummaryLabel(summary),
         tableNumber(summary.casts, 'casts', 0),
         tableNumber(summary.fish, 'fish', 0),
         tableNumber(summary.gold, 'income'),
@@ -1792,7 +1840,7 @@ function renderStats() {
     });
 
     const biomeRows = (snapshot.biomeSummaries || []).map(summary => [
-        summary.biomeName || `地图 ${summary.biomeId}`,
+        biomeSummaryLabel(summary),
         tableNumber(summary.casts, 'casts', 0),
         tableNumber(summary.fish, 'fish', 0),
         tableNumber(summary.gold, 'income'),

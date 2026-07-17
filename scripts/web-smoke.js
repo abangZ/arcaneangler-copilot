@@ -504,6 +504,8 @@ try {
         assert.match(appSource, /const LOG_LIMIT = 200/);
         assert.match(appSource, /const RARITY_DISPLAY/);
         assert.match(appSource, /function estimateLevelUp/);
+        assert.match(appSource, /function baitSummaryLabel/);
+        assert.match(appSource, /function biomeSummaryLabel/);
         assert.match(appSource, /experienceRate\?\.xpPerHour/);
         assert.match(appSource, /experienceRate\.sampleCount/);
         assert.match(appSource, /levelsPerHour/);
@@ -981,6 +983,15 @@ try {
             goldGained: 97,
             xpGained: 1_241,
             relicsGained: 0,
+        }, {
+            biomeId: '2',
+            biomeName: 'Map 2',
+            baitId: 'bait-2',
+            baitName: 'Web Smoke Bait',
+            baitPrice: 20,
+            baitBiome: { id: '2', name: 'Map 2' },
+            baitTier: 'medium',
+            baitLuck: 250,
         });
 
         result = await requestJson(origin, '/api/stats', {
@@ -991,6 +1002,10 @@ try {
         assert.equal(result.body.today.gold, 97);
         assert.equal(result.body.lastContext.biomeId, '2');
         assert.equal(result.body.baitSummaries[0].baitId, 'bait-2');
+        assert.equal(result.body.baitSummaries[0].baitBiome.id, '2');
+        assert.equal(result.body.baitSummaries[0].baitTier, 'medium');
+        assert.equal(result.body.baitSummaries[0].baitLuck, 250);
+        assert.equal(result.body.biomeSummaries[0].biomeId, '2');
         assert.equal(result.body.todayBaitSummaries[0].casts, 1);
         assert.equal(result.body.lastFish.name, 'Web Smoke Fish');
 

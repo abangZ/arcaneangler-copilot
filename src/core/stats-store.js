@@ -125,6 +125,7 @@ function normalizeContext(value) {
 
     const biomeId = nullableId(value.biomeId);
     const baitId = nullableId(value.baitId);
+    const baitBiomeId = nullableId(value.baitBiome?.id);
 
     if (!biomeId && !baitId) {
         return null;
@@ -140,6 +141,17 @@ function normalizeContext(value) {
             ? nullableText(value.baitName) || baitId
             : null,
         baitPrice: nullableNonNegativeNumber(value.baitPrice),
+        baitBiome: baitBiomeId
+            ? {
+                id: baitBiomeId,
+                name: nullableText(value.baitBiome?.name) ||
+                    (baitBiomeId === 'global'
+                        ? '全地图'
+                        : `地图 ${baitBiomeId}`),
+            }
+            : null,
+        baitTier: nullableText(value.baitTier, 40),
+        baitLuck: nullableNonNegativeNumber(value.baitLuck),
     };
 }
 
@@ -329,6 +341,12 @@ function listGroupedBreakdowns(breakdowns, dimension) {
                     baitId: breakdown.baitId,
                     baitName: breakdown.baitName,
                     baitPrice: breakdown.baitPrice,
+                    baitBiome: breakdown.baitBiome || {
+                        id: breakdown.biomeId,
+                        name: breakdown.biomeName,
+                    },
+                    baitTier: breakdown.baitTier,
+                    baitLuck: breakdown.baitLuck,
                 }
                 : {
                     biomeId: breakdown.biomeId,
@@ -376,6 +394,9 @@ export function summarizeCastResult(result, context = null) {
         baitId: context?.baitId ?? source.equippedBait,
         baitName: context?.baitName,
         baitPrice: context?.baitPrice,
+        baitBiome: context?.baitBiome,
+        baitTier: context?.baitTier,
+        baitLuck: context?.baitLuck,
     });
     const baitPrice = normalizedContext?.baitPrice;
     const hasBait = Boolean(normalizedContext?.baitId);
@@ -618,6 +639,9 @@ export class StatsStore {
                     baitId: currentBaitId,
                     baitName: this.value.lastContext.baitName,
                     baitPrice: this.value.lastContext.baitPrice,
+                    baitBiome: this.value.lastContext.baitBiome,
+                    baitTier: this.value.lastContext.baitTier,
+                    baitLuck: this.value.lastContext.baitLuck,
                     biomeId: currentBiomeId,
                     biomeName: this.value.lastContext.biomeName,
                     today: publicSummary(

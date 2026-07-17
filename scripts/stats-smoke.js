@@ -14,6 +14,16 @@ const tempDirectory = await fs.mkdtemp(
 );
 const filePath = path.join(tempDirectory, 'stats.json');
 let currentTime = new Date(2026, 6, 15, 23, 50, 0, 0);
+const statsContext = {
+    biomeId: '2',
+    biomeName: 'Moonlit Marsh',
+    baitId: 'bait-2',
+    baitName: 'Glow Worm',
+    baitPrice: 10,
+    baitBiome: { id: '2', name: 'Moonlit Marsh' },
+    baitTier: 'high',
+    baitLuck: 500,
+};
 
 try {
     const store = new StatsStore({
@@ -31,13 +41,7 @@ try {
     const session = new ArcaneAnglerPage({
         page: {
             on: () => {},
-            evaluate: async () => ({
-                biomeId: '2',
-                biomeName: 'Moonlit Marsh',
-                baitId: 'bait-2',
-                baitName: 'Glow Worm',
-                baitPrice: 10,
-            }),
+            evaluate: async () => statsContext,
         },
         config: {},
         reporter: { log: async () => {} },
@@ -90,11 +94,9 @@ try {
         page: {
             on: () => {},
             evaluate: async (_callback, ids) => ({
+                ...statsContext,
                 biomeId: ids.currentBiome,
-                biomeName: 'Moonlit Marsh',
                 baitId: ids.equippedBait,
-                baitName: 'Glow Worm',
-                baitPrice: 10,
             }),
         },
         config: {},
@@ -104,13 +106,7 @@ try {
     assert.deepEqual(await contextSession.getCastStatsContext({
         currentBiome: 2,
         equippedBait: 'bait-2',
-    }), {
-        biomeId: '2',
-        biomeName: 'Moonlit Marsh',
-        baitId: 'bait-2',
-        baitName: 'Glow Worm',
-        baitPrice: 10,
-    });
+    }), statsContext);
 
     assert.deepEqual(summarizeCastResult({
         count: 2,
@@ -121,13 +117,7 @@ try {
         relicsGained: 0,
         currentBiome: 2,
         equippedBait: 'bait-2',
-    }, {
-        biomeId: '2',
-        biomeName: 'Moonlit Marsh',
-        baitId: 'bait-2',
-        baitName: 'Glow Worm',
-        baitPrice: 10,
-    }), {
+    }, statsContext), {
         casts: 1,
         fish: 2,
         gold: 97,
@@ -140,13 +130,7 @@ try {
         gears: 0,
         category: 'Uncommon',
         earnedCount: 2,
-        context: {
-            biomeId: '2',
-            biomeName: 'Moonlit Marsh',
-            baitId: 'bait-2',
-            baitName: 'Glow Worm',
-            baitPrice: 10,
-        },
+        context: statsContext,
         lastFish: {
             name: 'Moonfin',
             fishId: 'moonfin',
@@ -186,13 +170,7 @@ try {
         xpGained: 1_241,
         currentBiome: 2,
         equippedBait: 'bait-2',
-    }, {
-        biomeId: '2',
-        biomeName: 'Moonlit Marsh',
-        baitId: 'bait-2',
-        baitName: 'Glow Worm',
-        baitPrice: 10,
-    });
+    }, statsContext);
     await store.recordCast({
         rarity: 'Treasure Chest',
         treasureChest: true,
@@ -225,6 +203,12 @@ try {
     assert.equal(snapshot.breakdowns[0].biomeName, 'Moonlit Marsh');
     assert.equal(snapshot.breakdowns[0].baitName, 'Glow Worm');
     assert.equal(snapshot.baitSummaries[0].casts, 1);
+    assert.deepEqual(
+        snapshot.baitSummaries[0].baitBiome,
+        statsContext.baitBiome,
+    );
+    assert.equal(snapshot.baitSummaries[0].baitTier, 'high');
+    assert.equal(snapshot.baitSummaries[0].baitLuck, 500);
     assert.equal(snapshot.todayBaitSummaries[0].casts, 1);
     assert.equal(snapshot.biomeSummaries[0].fish, 2);
     assert.equal(snapshot.currentBait.today.gold, 97);
@@ -240,13 +224,7 @@ try {
         isPunished: false,
         punishmentExpiresAt: null,
         caughtAt: currentTime.toISOString(),
-        context: {
-            biomeId: '2',
-            biomeName: 'Moonlit Marsh',
-            baitId: 'bait-2',
-            baitName: 'Glow Worm',
-            baitPrice: 10,
-        },
+        context: statsContext,
     });
     assert.equal(notificationCount, 3);
     assert.equal((await fs.stat(filePath)).mode & 0o777, 0o600);
@@ -272,13 +250,7 @@ try {
 
     assert.equal(reloaded.get().today.relics, 3);
     assert.equal(reloaded.get().total.gold, 109);
-    assert.deepEqual(reloaded.get().lastContext, {
-        biomeId: '2',
-        biomeName: 'Moonlit Marsh',
-        baitId: 'bait-2',
-        baitName: 'Glow Worm',
-        baitPrice: 10,
-    });
+    assert.deepEqual(reloaded.get().lastContext, statsContext);
     assert.equal(reloaded.get().breakdowns[0].casts, 1);
     assert.equal(reloaded.get().lastFish.name, 'Moonfin');
 
