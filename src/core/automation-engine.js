@@ -30,6 +30,7 @@ export class AutomationEngine {
         this.pageSetupInProgress = false;
         this.scheduleMode = null;
         this.activeCompetition = null;
+        this.activePunishmentExpiresAt = null;
         this.maintenanceRetryAt = 0;
     }
 
@@ -55,6 +56,7 @@ export class AutomationEngine {
             stopping: this.stopRequested,
             consecutiveErrors: this.consecutiveErrors,
             competition: this.activeCompetition,
+            punishmentExpiresAt: this.activePunishmentExpiresAt,
         };
     }
 
@@ -218,6 +220,41 @@ export class AutomationEngine {
         }
     }
 
+    async waitForActivePunishment(settings) {
+        const punishmentExpiresAt =
+            this.session.getActivePunishmentExpiresAt?.() || null;
+
+        if (!punishmentExpiresAt) {
+            if (this.activePunishmentExpiresAt) {
+                this.activePunishmentExpiresAt = null;
+                this.resetFeatures();
+                await this.reporter.update({
+                    level: 'running',
+                    phase: 'fishing',
+                    target: '恢复自动化',
+                    activeFeature: '收益保护',
+                    message: '游戏的零收益处罚已结束，恢复自动操作。',
+                });
+            }
+
+            return false;
+        }
+
+        const transitioned =
+            this.activePunishmentExpiresAt !== punishmentExpiresAt;
+
+        this.activePunishmentExpiresAt = punishmentExpiresAt;
+        await this.reporter.update({
+            level: 'waiting',
+            phase: 'fishing',
+            target: '等待零收益处罚结束',
+            activeFeature: '收益保护',
+            message: `游戏返回了 Softban 标记；金币和经验为 0，已暂停页面操作至 ${this.formatLocalTime(new Date(punishmentExpiresAt))}，避免继续消耗鱼饵。`,
+        }, { record: transitioned });
+        await sleep(settings.advanced.pollIntervalMs);
+        return true;
+    }
+
     async runCycle() {
         const settings = this.settings.get();
         this.scheduler.updateConfig(settings.schedule);
@@ -319,6 +356,10 @@ export class AutomationEngine {
             await this.ensureStarted();
         } else if (previousMode !== gate.mode) {
             this.resetFeatures();
+        }
+
+        if (await this.waitForActivePunishment(settings)) {
+            return;
         }
 
         for (const feature of enabledFeatures) {

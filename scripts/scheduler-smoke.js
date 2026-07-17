@@ -207,6 +207,7 @@ assert.equal(gate.resumeAt.getHours(), 9);
 let lifecycleNow = new Date(2026, 6, 16, 1, 0, 0, 0);
 const lifecycleEvents = [];
 let lifecycleCompetitions = [];
+let lifecyclePunishmentExpiresAt = null;
 let baitCheckDue = true;
 const lifecycleScheduler = new OperationScheduler(config, {
     now: () => new Date(lifecycleNow),
@@ -235,6 +236,8 @@ const engine = new AutomationEngine({
     session: {
         bootstrap: async () => lifecycleEvents.push('bootstrap'),
         getCompetitionSchedule: () => lifecycleCompetitions,
+        getActivePunishmentExpiresAt: () =>
+            lifecyclePunishmentExpiresAt,
     },
     browserLifecycle: {
         suspend: async () => lifecycleEvents.push('suspend'),
@@ -339,6 +342,24 @@ assert.deepEqual(lifecycleEvents.slice(-6), [
     'reset:fishing',
     'tick:bait',
 ]);
+
+lifecyclePunishmentExpiresAt = '2099-07-16T02:00:00.000Z';
+const punishmentEventCount = lifecycleEvents.length;
+await engine.runCycle();
+assert.deepEqual(lifecycleEvents.slice(punishmentEventCount), []);
+assert.equal(
+    engine.getState().punishmentExpiresAt,
+    lifecyclePunishmentExpiresAt,
+);
+
+lifecyclePunishmentExpiresAt = null;
+await engine.runCycle();
+assert.deepEqual(lifecycleEvents.slice(-3), [
+    'reset:bait',
+    'reset:fishing',
+    'tick:bait',
+]);
+assert.equal(engine.getState().punishmentExpiresAt, null);
 
 console.log(
     'Scheduler smoke passed: world boss priority, deferred rest, night wakeup and delayed morning resume work.',

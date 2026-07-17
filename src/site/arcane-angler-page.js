@@ -27,6 +27,13 @@ function normalizedDate(value, fallback = null) {
     return fallback;
 }
 
+function normalizeCaptchaChallenge(value) {
+    const token = String(value?.token ?? '').trim();
+    const bgSvg = String(value?.bgSvg ?? '').trim();
+
+    return token && bgSvg ? { token, bgSvg } : null;
+}
+
 function normalizedFiniteNumber(value) {
     if (value == null || value === '') {
         return null;
@@ -300,6 +307,8 @@ export class ArcaneAnglerPage {
         this.baitQuantities = new Map();
         this.equippedBaitId = null;
         this.lastSuccessfulCastAt = null;
+        this.punishmentExpiresAt = null;
+        this.activeCaptchaChallenge = null;
         this.attachPage(page);
     }
 
@@ -333,6 +342,32 @@ export class ArcaneAnglerPage {
 
     getLastSuccessfulCastAt() {
         return this.lastSuccessfulCastAt;
+    }
+
+    rememberPunishment(result) {
+        const punishmentExpiresAt = normalizedDate(
+            result?.punishmentExpiresAt,
+        );
+        const expiresAt = Date.parse(punishmentExpiresAt);
+
+        this.punishmentExpiresAt = result?.isPunished === true &&
+            Number.isFinite(expiresAt) &&
+            expiresAt > Date.now()
+            ? punishmentExpiresAt
+            : null;
+
+        return this.getActivePunishmentExpiresAt();
+    }
+
+    getActivePunishmentExpiresAt(now = Date.now()) {
+        const expiresAt = Date.parse(this.punishmentExpiresAt);
+
+        if (!Number.isFinite(expiresAt) || expiresAt <= now) {
+            this.punishmentExpiresAt = null;
+            return null;
+        }
+
+        return this.punishmentExpiresAt;
     }
 
     rememberBaitQuantity(baitId, quantity, { equipped = false } = {}) {
@@ -386,6 +421,7 @@ export class ArcaneAnglerPage {
     }
 
     replacePage(page) {
+        this.activeCaptchaChallenge = null;
         this.attachPage(page);
         this.pointerPosition = { x: 640, y: 450 };
     }
@@ -394,7 +430,39 @@ export class ArcaneAnglerPage {
         this.page = page;
         page.on('response', response => {
             void this.collectCastResponse(response);
+            void this.collectCaptchaChallengeResponse(response);
         });
+    }
+
+    rememberCaptchaChallenge(value) {
+        this.activeCaptchaChallenge = normalizeCaptchaChallenge(value);
+        return this.activeCaptchaChallenge
+            ? structuredClone(this.activeCaptchaChallenge)
+            : null;
+    }
+
+    async collectCaptchaChallengeResponse(response) {
+        const request = response.request();
+        const pathname = new URL(response.url()).pathname;
+
+        if (
+            request.method() !== 'GET' ||
+            pathname !== '/api/game/captcha-challenge' ||
+            !response.ok()
+        ) {
+            return;
+        }
+
+        try {
+            this.rememberCaptchaChallenge(await response.json());
+        } catch (error) {
+            await this.reporter.log({
+                level: 'error',
+                phase: 'verification',
+                target: '读取验证题目',
+                message: `无法读取 CAPTCHA challenge：${error.message}`,
+            });
+        }
     }
 
     async collectCastResponse(response) {
@@ -418,6 +486,7 @@ export class ArcaneAnglerPage {
                 typeof payload.result === 'object'
             ) {
                 this.lastSuccessfulCastAt = Date.now();
+                this.rememberPunishment(payload.result);
                 this.rememberBaitQuantity(
                     payload.result.equippedBait,
                     payload.result.baitQuantity,
@@ -1544,6 +1613,10 @@ export class ArcaneAnglerPage {
             return true;
         }
 
+        if (await this.dismissDerbyRegistrationModal()) {
+            return true;
+        }
+
         const modalCloseButton = await firstVisible(
             this.page.locator(
                 'div.fixed.inset-0.z-50 button.text-xl.leading-none',
@@ -1601,6 +1674,45 @@ export class ArcaneAnglerPage {
         }
 
         return false;
+    }
+
+    async dismissDerbyRegistrationModal({ timeoutMs = 0 } = {}) {
+        const modalLocator = this.page.locator(
+            'div.fixed.inset-0.z-50',
+        ).filter({
+            hasText: /Successfully registered for|报名成功|成功报名/i,
+        });
+
+        if (timeoutMs > 0) {
+            await modalLocator.first().waitFor({
+                state: 'visible',
+                timeout: timeoutMs,
+            }).catch(() => {});
+        }
+
+        const modal = await firstVisible(modalLocator);
+
+        if (!modal) {
+            return false;
+        }
+
+        const closeButton = await firstVisible(modal.getByRole('button', {
+            name: /^(Close|关闭|确定)$/i,
+        }));
+
+        if (!closeButton) {
+            throw new Error('Derby 报名成功弹窗中找不到关闭按钮。');
+        }
+
+        await this.trustedClick(closeButton, { timeout: 5_000 });
+        await modal.waitFor({
+            state: 'hidden',
+            timeout: this.config.navigationTimeoutMs,
+        });
+        await this.reporter.update({
+            message: '已关闭 Derby 报名成功弹窗。',
+        }, { record: false });
+        return true;
     }
 
     async isFishingPage() {
@@ -2005,6 +2117,7 @@ export class ArcaneAnglerPage {
             message: '一键报名操作没有完成',
             shouldStop: this.shouldStop,
         });
+        await this.dismissDerbyRegistrationModal({ timeoutMs: 2_000 });
 
         const latestState = await this.getMapAutomationState();
 
@@ -2758,6 +2871,118 @@ export class ArcaneAnglerPage {
         });
     }
 
+    async readCaptchaApiAnswer(challenge) {
+        return this.page.evaluate(bgSvg => {
+            const documentNode = new DOMParser().parseFromString(
+                bgSvg,
+                'image/svg+xml',
+            );
+
+            if (documentNode.querySelector('parsererror')) {
+                throw new Error('验证背景 SVG 解析失败。');
+            }
+
+            const root = documentNode.documentElement;
+            const gap = [...documentNode.querySelectorAll('rect')]
+                .find(rect => rect.hasAttribute('stroke-dasharray'));
+
+            if (!gap) {
+                throw new Error('验证背景 SVG 中找不到拼图缺口。');
+            }
+
+            const number = (value, field) => {
+                const parsed = Number.parseFloat(value);
+
+                if (!Number.isFinite(parsed)) {
+                    throw new Error(`无法读取${field}。`);
+                }
+
+                return parsed;
+            };
+            const viewBox = root.getAttribute('viewBox')
+                ?.trim()
+                .split(/\s+/)
+                .map(Number);
+            const canvasWidth = viewBox?.length === 4 &&
+                Number.isFinite(viewBox[2])
+                ? viewBox[2]
+                : number(root.getAttribute('width'), '画布宽度');
+            const gapX = number(gap.getAttribute('x'), '缺口横坐标');
+            const gapWidth = number(gap.getAttribute('width'), '拼图宽度');
+            const travelWidth = canvasWidth - gapWidth;
+            const ratio = gapX / travelWidth;
+
+            if (travelWidth <= 0 || ratio < 0 || ratio > 1) {
+                throw new Error('验证缺口坐标超出可移动范围。');
+            }
+
+            return Math.round(ratio * 100);
+        }, challenge.bgSvg);
+    }
+
+    async solveHumanVerificationThroughApi() {
+        this.assertAutomationAllowed();
+
+        let challenge = this.activeCaptchaChallenge;
+
+        if (!challenge) {
+            const response = await this.page.evaluate(async () => {
+                if (
+                    typeof window.ApiService?.getCaptchaChallenge !==
+                    'function'
+                ) {
+                    throw new Error('页面未提供 CAPTCHA challenge API。');
+                }
+
+                return window.ApiService.getCaptchaChallenge();
+            });
+
+            challenge = this.rememberCaptchaChallenge(response);
+        }
+
+        if (!challenge) {
+            throw new Error('CAPTCHA challenge 缺少 token 或背景 SVG。');
+        }
+
+        const answer = await this.readCaptchaApiAnswer(challenge);
+        const result = await this.page.evaluate(
+            async ({ token, answer: answerValue }) => {
+                if (
+                    typeof window.ApiService?.notifyCaptchaVerified !==
+                    'function'
+                ) {
+                    throw new Error('页面未提供 CAPTCHA 验证 API。');
+                }
+
+                const response = await window.ApiService
+                    .notifyCaptchaVerified(token, String(answerValue));
+
+                try {
+                    const nextInterval = Math.floor(
+                        Math.random() * 300_001,
+                    ) + 900_000;
+
+                    localStorage.setItem(
+                        'fishingCaptchaLastVerified',
+                        String(Date.now()),
+                    );
+                    localStorage.setItem(
+                        'fishingCaptchaInterval',
+                        String(nextInterval),
+                    );
+                } catch {
+                    // 存储不可用不影响服务端验证结果。
+                }
+
+                return response;
+            },
+            { token: challenge.token, answer },
+        );
+
+        this.activeCaptchaChallenge = null;
+        return result;
+    }
+
     async dragCaptchaRange(range, targetValue) {
         this.assertAutomationAllowed();
         await range.scrollIntoViewIfNeeded();
@@ -2899,6 +3124,7 @@ export class ArcaneAnglerPage {
                 overlay = await this.getVerificationOverlay();
 
                 if (!overlay) {
+                    this.activeCaptchaChallenge = null;
                     await this.reporter.update({
                         level: 'running',
                         phase: 'verification',

@@ -305,6 +305,22 @@ try {
                         method: 'POST',
                     });
                     state.derbies.upcoming[0].is_registered = true;
+                    const modal = document.createElement('div');
+                    const message = document.createElement('p');
+                    const close = document.createElement('button');
+
+                    modal.className = 'fixed inset-0 z-50';
+                    message.textContent = 'Successfully registered for 1 derby!';
+                    close.textContent = 'Close';
+                    close.addEventListener('click', closeEvent => {
+                        state.events.push({
+                            name: 'registration-close',
+                            trusted: closeEvent.isTrusted,
+                        });
+                        modal.remove();
+                    });
+                    modal.append(message, close);
+                    document.body.appendChild(modal);
                     registerAll.disabled = false;
                 });
                 content.appendChild(registerAll);
@@ -526,6 +542,10 @@ try {
         registeredCount: 1,
         remainingCount: 0,
     });
+    assert.equal(
+        await page.locator('div.fixed.inset-0.z-50').count(),
+        0,
+    );
 
     await session.changeBiomeThroughUi(12, 'Biome Twelve');
 
@@ -537,7 +557,7 @@ try {
     assert.equal(result.currentBiome, 12);
     assert.deepEqual(
         result.events.map(event => event.name),
-        ['register-all', 'page-2', 'biome-12'],
+        ['register-all', 'registration-close', 'page-2', 'biome-12'],
     );
     assert.ok(result.events.every(event => event.trusted));
 

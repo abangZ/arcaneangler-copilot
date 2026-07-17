@@ -71,6 +71,26 @@ export async function waitForCastDelay(durationMs, {
     }
 }
 
+export async function waitForCastButtonToLeaveReadyState(castButton, {
+    sleepFor = sleep,
+    now = Date.now,
+    timeoutMs = 3_000,
+    checkIntervalMs = 50,
+} = {}) {
+    const deadline = now() + timeoutMs;
+
+    while (now() < deadline) {
+        if (
+            !(await isVisible(castButton)) ||
+            !(await castButton.isEnabled())
+        ) {
+            return;
+        }
+
+        await sleepFor(Math.min(checkIntervalMs, deadline - now()));
+    }
+}
+
 export class FishingFeature {
     constructor({ session, settings, reporter, now = Date.now }) {
         this.id = 'fishing';
@@ -205,11 +225,7 @@ export class FishingFeature {
                 await this.session.trustedClick(castButton);
                 this.lastProgressAt = this.now();
                 await this.reporter.incrementCast();
-
-                await castButton.waitFor({
-                    state: 'hidden',
-                    timeout: 3_000,
-                }).catch(() => {});
+                await waitForCastButtonToLeaveReadyState(castButton);
             }
         } else if (
             this.now() - this.lastProgressAt >=

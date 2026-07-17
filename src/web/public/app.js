@@ -1580,10 +1580,16 @@ function renderOverview() {
         const display = rarityDisplay(lastFish.rarity);
 
         elements['last-fish-name'].textContent = lastFish.name;
-        elements['last-fish-meta'].textContent =
-            `${formatNumber(lastFish.count, 0)} 条 · ${display.label}`;
-        elements['last-fish-reward'].textContent =
-            `${formatNumber(lastFish.gold)} 金币 · ${formatNumber(lastFish.xp)} XP`;
+        elements['last-fish-meta'].textContent = [
+            `${formatNumber(lastFish.count, 0)} 条`,
+            display.label,
+            lastFish.isPunished ? 'Softban' : null,
+        ].filter(Boolean).join(' · ');
+        elements['last-fish-reward'].textContent = [
+            `${formatNumber(lastFish.gold)} 金币`,
+            `${formatNumber(lastFish.xp)} XP`,
+            lastFish.isPunished ? '处罚期间无收益' : null,
+        ].filter(Boolean).join(' · ');
         elements['last-fish-context'].textContent = [
             lastFish.context?.biomeName,
             lastFish.context?.baitName,

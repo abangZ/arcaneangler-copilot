@@ -148,9 +148,9 @@ stopped -> starting -> running -> pausing -> paused
 
 ## 页面与 Feature 边界
 
-`ArcaneAnglerPage` 继续封装所有 DOM Locator 和页面响应细节。普通点击必须使用 Playwright `Locator.click()`，禁止在页面上下文调用 `HTMLElement.click()`。Human Verification 可以使用真实鼠标移动、点击和拖动。
+`ArcaneAnglerPage` 继续封装所有 DOM Locator 和页面响应细节。普通点击必须使用 Playwright `Locator.click()`，禁止在页面上下文调用 `HTMLElement.click()`。Human Verification 优先使用真实鼠标移动、点击和拖动；模拟手操失败且弹窗仍存在时，复用已观察到的 challenge 调用页面 `ApiService` 验证，成功后刷新页面恢复 React 状态。
 
-页面 adapter 监听页面自己产生的 `POST /api/game/cast` 成功响应，用页面 `BIOMES` / `BAITS` catalog 补齐地图名、鱼饵名和价格后交给 `StatsStore`，同时缓存响应中的 `equippedBait` / `baitQuantity` 供 `BaitFeature` 判断是否需要打开 Equipment。该监听不会发起额外抛竿请求，也不会改变页面对响应的消费。
+页面 adapter 监听页面自己产生的 `POST /api/game/cast` 成功响应，用页面 `BIOMES` / `BAITS` catalog 补齐地图名、鱼饵名和价格后交给 `StatsStore`，同时缓存响应中的 `equippedBait` / `baitQuantity` 供 `BaitFeature` 判断是否需要打开 Equipment。响应带有 `isPunished` 和有效的 `punishmentExpiresAt` 时，Engine 会暂停所有页面操作直至处罚结束，避免继续产生零收益抛竿和鱼饵成本。该监听不会发起额外抛竿请求，也不会改变页面对响应的消费。
 
 角色、天气和赛事状态通过页面已有 `ApiService.getPlayerData()`、`getAllBiomeWeather()`、`getCurrentAnomaly()`、`getCurrentTournaments()`、`getCurrentDerbies()` 做低频只读采集。公会锦标赛是否参与以 standings 中存在当前 `guild_id` 为准，不能只依据全局 active tournament 或 Biomes 页标签。世界 Boss 的 inactive 响应提供 `nextSpawnTime`，active 响应提供生命值、结束时间、弱点、个人参与和排行榜。
 首页复用同一份锦标赛 standings，按数组顺序计算当前公会排名，并展示 `total_points` 与 `fish_caught`；没有 standings 或当前公会未参赛时隐藏进度和排名。
@@ -159,9 +159,9 @@ feature 只编排语义操作：
 
 - `VerificationFeature`：优先处理页面验证。
 - `WorldBossFeature`：默认开启；活动中进入 Anomalies 页面并通过主要弱点对应的页面按钮持续攻击。只读接口用于发现和展示，不直接构造攻击请求。
-- `MapFeature`：自动切图与公会锦标赛优先是两个默认开启的独立设置。锦标赛优先开启时，已参与锦标赛覆盖关闭/固定/自动地图策略；比赛结束后恢复原策略。自动模式继续报名可参与 Derby，并按个人 Derby、经验权重选择已解锁地图。
+- `MapFeature`：自动切图与公会锦标赛优先是两个默认开启的独立设置。锦标赛优先开启时，已参与锦标赛覆盖关闭/固定/自动地图策略；比赛结束后恢复原策略。自动模式继续报名可参与 Derby，关闭报名成功弹窗，并按个人 Derby、经验权重选择已解锁地图。
 - `BaitFeature`：按当前地图的 `0..4` 档位购买和装备鱼饵；已知库存充足时复用 `/cast` 缓存，不进入 Equipment。
-- `FishingFeature`：确保经典模式，常规状态按 90% 常规、8% 短停顿、2% 长停顿分层等待；比赛期间跳过长停顿。等待期间每 500ms 重新检查 scheduler gate。
+- `FishingFeature`：确保经典模式，常规状态按 90% 常规、8% 短停顿、2% 长停顿分层等待；比赛期间跳过长停顿。等待期间每 500ms 重新检查 scheduler gate。点击后只等待按钮隐藏或进入冷却禁用状态，不额外等待完整超时。
 
 HTTP API 和 Web UI 不得直接持有 DOM Locator，也不得绕过 Engine queue 调用页面方法。
 
@@ -207,9 +207,9 @@ SIGINT / SIGTERM 的顺序是：
 - `pnpm run smoke:fishing`：默认普通延迟、90%/8%/2% 概率边界和比赛期间长停顿覆盖。
 - `pnpm run smoke:scheduler`：active/rest/quiet、比赛延后休息、夜间唤醒和早间延迟恢复。
 - `pnpm run smoke:stats`：`/cast` 响应解析、鱼饵余量缓存、每日/地图/鱼饵聚合、最后鱼获、v1 迁移和持久化。
-- `pnpm run smoke:map`：公会锦标赛优先级、Derby 报名、活动时间、地图算法、角色/地图快照和可信点击。
+- `pnpm run smoke:map`：公会锦标赛优先级、Derby 报名及成功弹窗关闭、活动时间、地图算法、角色/地图快照和可信点击。
 - `pnpm run smoke:bait`：跨地图档位、购买、装备、库存缓存和 Equipment 跳过。
-- `pnpm run smoke:verification`：真实鼠标验证事件。
+- `pnpm run smoke:verification`：真实鼠标验证事件、验证完成竞态识别和页面 API 兜底。
 - Chromium smoke 在当前环境中串行执行，不并行启动 persistent browser。
 
 `.env`、`.data/`、`artifacts/` 和 `node_modules/` 必须保持在 Git 忽略范围内。

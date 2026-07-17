@@ -47,6 +47,8 @@ try {
         },
     });
     assert.equal(session.getLastSuccessfulCastAt(), null);
+    const punishmentExpiresAt = '2099-07-15T16:30:00.000Z';
+
     await session.collectCastResponse({
         request: () => ({ method: () => 'POST' }),
         url: () => 'https://arcaneangler.com/api/game/cast',
@@ -58,6 +60,8 @@ try {
                 currentBiome: 2,
                 equippedBait: 'bait-2',
                 baitQuantity: 87,
+                isPunished: true,
+                punishmentExpiresAt,
             },
         }),
     });
@@ -66,8 +70,16 @@ try {
         currentBiome: 2,
         equippedBait: 'bait-2',
         baitQuantity: 87,
+        isPunished: true,
+        punishmentExpiresAt,
     });
     assert.ok(Number.isFinite(session.getLastSuccessfulCastAt()));
+    assert.equal(
+        session.getActivePunishmentExpiresAt(),
+        punishmentExpiresAt,
+    );
+    session.rememberPunishment({ isPunished: false });
+    assert.equal(session.getActivePunishmentExpiresAt(), null);
     const knownBait = session.getKnownBaitQuantity('bait-2');
 
     assert.equal(knownBait.quantity, 87);
@@ -142,7 +154,28 @@ try {
             count: 2,
             gold: 97,
             xp: 1_241,
+            isPunished: false,
+            punishmentExpiresAt: null,
         },
+    });
+
+    assert.deepEqual(summarizeCastResult({
+        count: 1,
+        rarity: 'Common',
+        fish: { id: 'sprat', name: 'Static Fin Sprat', baseGold: 12 },
+        goldGained: 0,
+        xpGained: 0,
+        isPunished: true,
+        punishmentExpiresAt,
+    }).lastFish, {
+        name: 'Static Fin Sprat',
+        fishId: 'sprat',
+        rarity: 'Common',
+        count: 1,
+        gold: 0,
+        xp: 0,
+        isPunished: true,
+        punishmentExpiresAt,
     });
 
     await store.recordCast({
@@ -204,6 +237,8 @@ try {
         count: 2,
         gold: 97,
         xp: 1_241,
+        isPunished: false,
+        punishmentExpiresAt: null,
         caughtAt: currentTime.toISOString(),
         context: {
             biomeId: '2',

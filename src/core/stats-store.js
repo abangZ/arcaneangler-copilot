@@ -39,6 +39,14 @@ function nullableText(value, maxLength = 160) {
     return normalized ? normalized.slice(0, maxLength) : null;
 }
 
+function nullableIsoDate(value) {
+    const timestamp = Date.parse(value);
+
+    return Number.isFinite(timestamp)
+        ? new Date(timestamp).toISOString()
+        : null;
+}
+
 function localDayKey(date) {
     const pad = value => String(value).padStart(2, '0');
 
@@ -190,6 +198,8 @@ function normalizeLastFish(value) {
         count: Math.max(1, nonNegativeNumber(value.count)),
         gold: nonNegativeNumber(value.gold),
         xp: nonNegativeNumber(value.xp),
+        isPunished: value.isPunished === true,
+        punishmentExpiresAt: nullableIsoDate(value.punishmentExpiresAt),
         caughtAt,
         context: normalizeContext(value.context),
     };
@@ -336,8 +346,12 @@ export function summarizeCastResult(result, context = null) {
                 fishId: nullableId(source.fish.id),
                 rarity: rarity || 'Unknown',
                 count,
-                gold: nonNegativeNumber(source.goldGained) || fishGold,
+                gold: nonNegativeNumber(source.goldGained),
                 xp: nonNegativeNumber(source.xpGained),
+                isPunished: source.isPunished === true,
+                punishmentExpiresAt: nullableIsoDate(
+                    source.punishmentExpiresAt,
+                ),
             }
             : null,
     };

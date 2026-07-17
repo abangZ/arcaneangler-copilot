@@ -12,6 +12,7 @@ import {
     FishingFeature,
     NO_FISH_REFRESH_MS,
     selectCastDelay,
+    waitForCastButtonToLeaveReadyState,
     waitForCastDelay,
 } from '../src/features/fishing-feature.js';
 
@@ -133,6 +134,22 @@ await waitForCastDelay(20_000, {
 });
 assert.deepEqual(cancelledSleepChunks, [500]);
 assert.equal(NO_FISH_REFRESH_MS, 180_000);
+
+currentTime = 1_000;
+let castButtonEnabled = true;
+const buttonWaitChunks = [];
+await waitForCastButtonToLeaveReadyState({
+    isVisible: async () => true,
+    isEnabled: async () => castButtonEnabled,
+}, {
+    sleepFor: async milliseconds => {
+        buttonWaitChunks.push(milliseconds);
+        currentTime += milliseconds;
+        castButtonEnabled = false;
+    },
+    now: () => currentTime,
+});
+assert.deepEqual(buttonWaitChunks, [50]);
 
 let fishingNow = 1_000;
 let lastSuccessfulCastAt = null;
