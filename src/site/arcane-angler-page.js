@@ -1611,6 +1611,10 @@ export class ArcaneAnglerPage {
             return false;
         }
 
+        if (await this.dismissGameAutoFishingSummary()) {
+            return true;
+        }
+
         if (await this.claimDailyLoginRewardIfPresent()) {
             return true;
         }
@@ -1676,6 +1680,45 @@ export class ArcaneAnglerPage {
         }
 
         return false;
+    }
+
+    async dismissGameAutoFishingSummary({ timeoutMs = 0 } = {}) {
+        const modalLocator = this.page.locator(
+            'div.fixed.inset-0.z-50',
+        ).filter({
+            hasText: /Auto-Cast Summary/i,
+        });
+
+        if (timeoutMs > 0) {
+            await modalLocator.first().waitFor({
+                state: 'visible',
+                timeout: timeoutMs,
+            }).catch(() => {});
+        }
+
+        const modal = await firstVisible(modalLocator);
+
+        if (!modal) {
+            return false;
+        }
+
+        const closeButton = await firstVisible(modal.getByRole('button', {
+            name: /^(Close|关闭)$/i,
+        }));
+
+        if (!closeButton) {
+            throw new Error('游戏 Auto-Cast 汇总层中找不到关闭按钮。');
+        }
+
+        await this.trustedClick(closeButton, { timeout: 5_000 });
+        await modal.waitFor({
+            state: 'hidden',
+            timeout: this.config.navigationTimeoutMs,
+        });
+        await this.reporter.update({
+            message: '已关闭游戏 Auto-Cast 汇总层。',
+        }, { record: false });
+        return true;
     }
 
     async dismissDerbyRegistrationModal({ timeoutMs = 0 } = {}) {
@@ -1834,6 +1877,7 @@ export class ArcaneAnglerPage {
         let state = await this.getGameAutoFishingState();
 
         if (!state.available || !state.active) {
+            await this.dismissGameAutoFishingSummary();
             return state;
         }
 
@@ -1848,6 +1892,7 @@ export class ArcaneAnglerPage {
             });
 
             if (!state.active) {
+                await this.dismissGameAutoFishingSummary();
                 return state;
             }
         }
@@ -1863,6 +1908,7 @@ export class ArcaneAnglerPage {
             message: '停止游戏自动钓鱼后状态没有更新',
             shouldStop: this.shouldStop,
         });
+        await this.dismissGameAutoFishingSummary({ timeoutMs: 3_000 });
 
         return state;
     }

@@ -291,6 +291,29 @@ try {
             function renderFishing() {
                 setActive(0);
                 content.innerHTML = '<div>[B' + state.player.currentBiome + '] Fishing</div>';
+                const showAutoCastSummary = () => {
+                    const overlay = document.createElement('div');
+
+                    overlay.className = 'fixed inset-0 z-50';
+                    overlay.innerHTML = [
+                        '<div>',
+                        '<h2>🤖 Auto-Cast Summary</h2>',
+                        '<p>Total Gold 27</p>',
+                        '<button>Close</button>',
+                        '</div>',
+                    ].join('');
+                    overlay.querySelector('button').addEventListener(
+                        'click',
+                        event => {
+                            state.events.push({
+                                name: 'close-auto-summary',
+                                trusted: event.isTrusted,
+                            });
+                            overlay.remove();
+                        },
+                    );
+                    document.body.appendChild(overlay);
+                };
                 const autoFishing = document.createElement('button');
                 autoFishing.className = 'flex-[15]';
                 autoFishing.title = 'Start Auto-Cast';
@@ -305,8 +328,12 @@ try {
                         ? 'Start Auto-Cast'
                         : 'Stop Auto-Cast';
                     autoFishing.textContent = active ? '🤖' : '🛑';
+                    if (active) {
+                        showAutoCastSummary();
+                    }
                 });
                 content.appendChild(autoFishing);
+                window.mapSmoke.showAutoCastSummary = showAutoCastSummary;
             }
 
             function renderEvents() {
@@ -425,11 +452,28 @@ try {
     });
     assert.deepEqual(
         (await page.evaluate(() => window.mapSmoke.events))
-            .slice(-2),
+            .slice(-3),
         [
             { name: 'start-game-auto', trusted: true },
             { name: 'stop-game-auto', trusted: true },
+            { name: 'close-auto-summary', trusted: true },
         ],
+    );
+    await page.evaluate(() => window.mapSmoke.showAutoCastSummary());
+    assert.deepEqual(await session.stopGameAutoFishing(), {
+        available: true,
+        active: false,
+        enabled: true,
+    });
+    assert.deepEqual(
+        (await page.evaluate(() => window.mapSmoke.events)).at(-1),
+        { name: 'close-auto-summary', trusted: true },
+    );
+    await page.evaluate(() => window.mapSmoke.showAutoCastSummary());
+    assert.equal(await session.dismissBlockingOverlays(), true);
+    assert.deepEqual(
+        (await page.evaluate(() => window.mapSmoke.events)).at(-1),
+        { name: 'close-auto-summary', trusted: true },
     );
     assert.deepEqual(dashboard.biome, {
         id: '1',
@@ -596,6 +640,9 @@ try {
         [
             'start-game-auto',
             'stop-game-auto',
+            'close-auto-summary',
+            'close-auto-summary',
+            'close-auto-summary',
             'register-all',
             'registration-close',
             'page-2',
