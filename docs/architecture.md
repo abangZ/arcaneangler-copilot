@@ -122,11 +122,11 @@ stopped -> starting -> running -> pausing -> paused
 ### `src/core/automation-worker.js`
 
 - 创建 browser profile、persistent context、`ArcaneAnglerPage`、Engine 和 features。
-- quiet hours 的 `browserLifecycle.suspend/resume` 只关闭和重建 Playwright，不影响 Web 服务。
+- quiet hours 默认通过 `browserLifecycle.suspend/resume` 关闭和重建 Playwright，不影响 Web 服务；启用夜间游戏 Auto-Cast 时保留页面，Engine 只在受控 quiet 门禁内操作对应控件。
 - `session.replacePage()` 保证恢复后所有 feature 使用新的页面引用。
 - 页面脚本异常通过 `StatusReporter.log()` 记录，不整体转发页面 console。
 - 把 `StatsStore` 回调交给页面 adapter，Worker 和 HTTP handler 不解析游戏响应字段。
-- 页面 bootstrap 后读取角色等级、XP、当前地图/鱼饵和天气经验加成；抛竿响应即时更新 `newLevel/newXP/xpToNext`，并至多每分钟重新校准完整快照。
+- 页面 bootstrap 后读取角色金币、等级、XP、当前地图/鱼饵和天气经验加成；抛竿响应即时更新 `newGold/newLevel/newXP/xpToNext`，并至多每分钟重新校准完整快照。余额字段只用于首页展示，不进入收益累计。
 - 装备管理通过页面已登录会话的 `ApiService.getGears()`、`equipGear()` 和 `sellGears()` 完成，不切换当前游戏页面。Worker 对穿戴和出售操作记录结构化日志；quiet hours 或手动暂停关闭浏览器时拒绝操作，不额外创建临时页面。
 - 角色快照通过 `StatusReporter` 的非落盘状态事件提供给 Web；读取失败不阻断统计或自动化。
 
@@ -135,6 +135,7 @@ stopped -> starting -> running -> pausing -> paused
 - 注册并按优先级调度 Verification、WorldBoss、Map、Bait、Fishing。
 - 每轮读取最新配置，并把最新 schedule 交给 `OperationScheduler`。
 - 操作前继续通过 `isOperationAllowed()` / `AutomationPausedError` 做实时门禁。
+- quiet 游戏 Auto-Cast 使用 Engine 内部的窄门禁启动、检查和停止；feature 不会在 quiet 中运行。quiet 结束、赛事开始或配置关闭时先停止仍在运行的游戏 Auto-Cast，再重置 features 并恢复脚本钓鱼。
 - 连续异常达到网页配置的阈值后截图并尝试恢复。
 - 浏览器不可恢复地关闭时让 Worker 进入 error；Web 控制面继续在线。
 
@@ -143,7 +144,7 @@ stopped -> starting -> running -> pausing -> paused
 - 状态包含 `idle`、`active`、`competition`、`rest`、`quiet` 和 `disabled`。
 - 已参与的活动优先于自动 rest/quiet；用户手动关闭自动化仍然生效。
 - schedule 变化时重置当前周期并使用新配置重新计算。
-- quiet 会关闭整个 Playwright persistent context，而不是只关闭 page；常规恢复时间在配置的 quiet end 后再延迟 1 小时。
+- 夜间休息可整体关闭。启用时 quiet 默认关闭整个 Playwright persistent context，而不是只关闭 page；常规恢复时间在配置的 quiet end 后再延迟 1 小时。若启用游戏 Auto-Cast 接管，则 quiet 期间保留 context，并可在游戏会话结束后自动续期。
 - 已记录活动在 quiet 内开始时进入 `competition` 并临时重建浏览器，结束后继续 quiet；活动期间到期的 active 周期会在活动结束后补休。世界 Boss 不要求 Biome，并优先于同时段的钓鱼赛事。
 
 ## 页面与 Feature 边界
@@ -161,7 +162,7 @@ feature 只编排语义操作：
 - `WorldBossFeature`：默认开启；活动中进入 Anomalies 页面并通过主要弱点对应的页面按钮持续攻击。只读接口用于发现和展示，不直接构造攻击请求。
 - `MapFeature`：自动切图与公会锦标赛优先是两个默认开启的独立设置。锦标赛优先开启时，已参与锦标赛覆盖关闭/固定/自动地图策略；比赛结束后恢复原策略。自动模式继续报名可参与 Derby，关闭报名成功弹窗，并按个人 Derby、经验权重选择已解锁地图。
 - `BaitFeature`：按当前地图的 `0..4` 档位购买和装备鱼饵；已知库存充足时复用 `/cast` 缓存，不进入 Equipment。
-- `FishingFeature`：确保经典模式，常规状态按 90% 常规、8% 短停顿、2% 长停顿分层等待；比赛期间跳过长停顿。等待期间每 500ms 重新检查 scheduler gate。点击后只等待按钮隐藏或进入冷却禁用状态，不额外等待完整超时。
+- `FishingFeature`：确保经典模式；常规、短停顿和长停顿的概率边界由配置计算，短/长停顿可分别关闭并设置概率与时间范围，默认仍为 90% / 8% / 2%。比赛期间跳过长停顿。等待期间每 500ms 重新检查 scheduler gate。点击后只等待按钮隐藏或进入冷却禁用状态，不额外等待完整超时。
 
 HTTP API 和 Web UI 不得直接持有 DOM Locator，也不得绕过 Engine queue 调用页面方法。
 
@@ -191,6 +192,7 @@ HTTP API 和 Web UI 不得直接持有 DOM Locator，也不得绕过 Engine queu
 - 保留最近 90 个每日汇总和对应的每日 breakdown；v1 文件原子迁移并保留原累计/每日数据。
 - 数据原子写入 `.data/stats.json`，权限固定为 `0600`。
 - Web 读取当前快照，并通过 `stats` SSE 事件实时更新；统计写入失败不阻断自动化循环。
+- `StatsStore` 额外保留最近一小时、最多 1000 杆的 XP 样本；速率使用首尾样本之间实际获得的 XP，重启、跨天和样本窗口之外的停机时间不会进入分母。Web 至少取得 2 个有效样本后派生 XP/小时、当前等级需求下的等级/小时和剩余时间。
 
 ## 关闭流程
 
@@ -204,10 +206,10 @@ SIGINT / SIGTERM 的顺序是：
 
 - `pnpm run smoke:web`：challenge 登录、多终端 session/独立退出、CSRF、配置持久化、收益 API、装备字段归一化、穿戴/批量出售、SSE 和 Worker 控制。
 - `pnpm run smoke:reporter`：运行配置快照、结构化输出、重复抑制和连续运行时的每日文件保留。
-- `pnpm run smoke:fishing`：默认普通延迟、90%/8%/2% 概率边界和比赛期间长停顿覆盖。
-- `pnpm run smoke:scheduler`：active/rest/quiet、比赛延后休息、夜间唤醒和早间延迟恢复。
+- `pnpm run smoke:fishing`：默认普通延迟、90%/8%/2% 概率边界、停顿独立开关/自定义范围、旧配置迁移和比赛期间长停顿覆盖。
+- `pnpm run smoke:scheduler`：active/rest/quiet、夜间关闭、游戏 Auto-Cast 接管/续期/退出、比赛延后休息、夜间唤醒和早间延迟恢复。
 - `pnpm run smoke:stats`：`/cast` 响应解析、鱼饵余量缓存、每日/地图/鱼饵聚合、最后鱼获、v1 迁移和持久化。
-- `pnpm run smoke:map`：公会锦标赛优先级、Derby 报名及成功弹窗关闭、活动时间、地图算法、角色/地图快照和可信点击。
+- `pnpm run smoke:map`：公会锦标赛优先级、Derby 报名及成功弹窗关闭、活动时间、地图算法、角色/金币/地图快照、游戏 Auto-Cast 启停和可信点击。
 - `pnpm run smoke:bait`：跨地图档位、购买、装备、库存缓存和 Equipment 跳过。
 - `pnpm run smoke:verification`：真实鼠标验证事件、验证完成竞态识别和页面 API 兜底。
 - Chromium smoke 在当前环境中串行执行，不并行启动 persistent browser。

@@ -68,6 +68,10 @@ export class OperationScheduler {
     }
 
     isBaseQuietTime(date = this.now()) {
+        if (this.config.quietEnabled === false) {
+            return false;
+        }
+
         const hour = date.getHours();
         const { quietStartHour, quietEndHour } = this.config;
 
@@ -90,6 +94,10 @@ export class OperationScheduler {
     }
 
     isQuietResumeDelay(date = this.now()) {
+        if (this.config.quietEnabled === false) {
+            return false;
+        }
+
         if (this.isBaseQuietTime(date)) {
             return false;
         }

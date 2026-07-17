@@ -6,6 +6,8 @@ import path from 'node:path';
 import {
     DEFAULT_SETTINGS,
     SETTINGS_VERSION,
+    SettingsValidationError,
+    validateSettings,
 } from '../src/core/settings-schema.js';
 import { SettingsStore } from '../src/core/settings-store.js';
 import {
@@ -25,10 +27,7 @@ assert.equal(
     2_000,
 );
 
-const settings = {
-    clickDelayMinMs: 500,
-    clickDelayMaxMs: 2_000,
-};
+const settings = structuredClone(DEFAULT_SETTINGS.features.fishing);
 const counts = {
     '较长停顿': 0,
     '短暂停顿': 0,
@@ -69,6 +68,61 @@ assert.deepEqual(
     {
         durationMs: 40_000,
         label: '较长停顿',
+    },
+);
+
+const invalidPauseSettings = structuredClone(DEFAULT_SETTINGS);
+
+invalidPauseSettings.features.fishing.shortPauseChancePercent = 60;
+invalidPauseSettings.features.fishing.longPauseChancePercent = 50;
+assert.throws(
+    () => validateSettings(invalidPauseSettings),
+    SettingsValidationError,
+);
+invalidPauseSettings.features.fishing.longPauseEnabled = false;
+assert.equal(
+    validateSettings(invalidPauseSettings).features.fishing
+        .shortPauseChancePercent,
+    60,
+);
+
+const disabledQuietSettings = structuredClone(DEFAULT_SETTINGS);
+
+disabledQuietSettings.schedule.quietEnabled = false;
+disabledQuietSettings.schedule.quietEndHour =
+    disabledQuietSettings.schedule.quietStartHour;
+assert.equal(
+    validateSettings(disabledQuietSettings).schedule.quietEnabled,
+    false,
+);
+assert.deepEqual(
+    selectCastDelay({
+        ...settings,
+        shortPauseEnabled: false,
+        longPauseEnabled: false,
+    }, {
+        chance: () => 0,
+        integer: (_min, max) => max,
+    }),
+    {
+        durationMs: 2_000,
+        label: '常规延迟',
+    },
+);
+assert.deepEqual(
+    selectCastDelay({
+        ...settings,
+        longPauseEnabled: false,
+        shortPauseChancePercent: 25,
+        shortPauseMinMs: 1_200,
+        shortPauseMaxMs: 1_800,
+    }, {
+        chance: () => 0.24,
+        integer: (_min, max) => max,
+    }),
+    {
+        durationMs: 1_800,
+        label: '短暂停顿',
     },
 );
 assert.deepEqual(
@@ -227,6 +281,17 @@ try {
     delete legacySettings.features.bait.derbyBaitTier;
     delete legacySettings.features.map.prioritizeTournament;
     delete legacySettings.features.worldBoss;
+    delete legacySettings.schedule.quietEnabled;
+    delete legacySettings.schedule.quietGameAutoFishingEnabled;
+    delete legacySettings.schedule.quietGameAutoFishingAutoRenew;
+    delete legacySettings.features.fishing.shortPauseEnabled;
+    delete legacySettings.features.fishing.shortPauseChancePercent;
+    delete legacySettings.features.fishing.shortPauseMinMs;
+    delete legacySettings.features.fishing.shortPauseMaxMs;
+    delete legacySettings.features.fishing.longPauseEnabled;
+    delete legacySettings.features.fishing.longPauseChancePercent;
+    delete legacySettings.features.fishing.longPauseMinMs;
+    delete legacySettings.features.fishing.longPauseMaxMs;
     await fs.writeFile(filePath, JSON.stringify({
         version: SETTINGS_VERSION,
         configured: true,
@@ -245,6 +310,23 @@ try {
         true,
     );
     assert.equal(snapshot.settings.features.worldBoss.enabled, true);
+    assert.equal(snapshot.settings.schedule.quietEnabled, true);
+    assert.equal(
+        snapshot.settings.schedule.quietGameAutoFishingEnabled,
+        false,
+    );
+    assert.equal(
+        snapshot.settings.schedule.quietGameAutoFishingAutoRenew,
+        false,
+    );
+    assert.equal(
+        snapshot.settings.features.fishing.shortPauseChancePercent,
+        8,
+    );
+    assert.equal(
+        snapshot.settings.features.fishing.longPauseChancePercent,
+        2,
+    );
     assert.equal(
         snapshot.settings.features.bait.guildTournamentBaitTier,
         3,
@@ -261,6 +343,15 @@ try {
         true,
     );
     assert.equal(persisted.settings.features.worldBoss.enabled, true);
+    assert.equal(persisted.settings.schedule.quietEnabled, true);
+    assert.equal(
+        persisted.settings.features.fishing.shortPauseEnabled,
+        true,
+    );
+    assert.equal(
+        persisted.settings.features.fishing.longPauseEnabled,
+        true,
+    );
     assert.equal(
         persisted.settings.features.bait.guildTournamentBaitTier,
         3,

@@ -9,7 +9,7 @@ const elementIds = [
     'overview-view', 'stats-view', 'gear-view', 'logs-view', 'settings-view',
     'worker-mode', 'status-dot', 'status-message',
     'start-button', 'pause-button', 'resume-button', 'stop-button',
-    'today-casts', 'today-gold', 'today-xp', 'today-fish',
+    'today-casts', 'today-gold', 'today-xp', 'today-fish', 'current-gold',
     'current-bait-name', 'current-bait-meta', 'current-bait-biome',
     'current-bait-tier', 'current-bait-luck', 'current-bait-context',
     'current-bait-start',
@@ -20,7 +20,7 @@ const elementIds = [
     'current-bait-net-average', 'current-bait-cost-note',
     'current-bait-rarity-list',
     'player-level', 'player-xp-percent', 'player-xp-bar', 'player-xp-text',
-    'level-eta', 'current-biome', 'current-biome-effect',
+    'level-eta', 'level-rate', 'current-biome', 'current-biome-effect',
     'world-boss-status', 'world-boss-title', 'world-boss-time-label',
     'world-boss-time', 'world-boss-hp-row', 'world-boss-hp',
     'world-boss-weakness-row', 'world-boss-weakness',
@@ -60,12 +60,17 @@ const elementIds = [
     'settings-revision', 'settings-note', 'save-settings', 'character',
     'headless', 'fishing-enabled', 'world-boss-enabled', 'classic-mode',
     'click-delay-min',
-    'click-delay-max', 'map-mode', 'prioritize-tournament',
+    'click-delay-max', 'short-pause-enabled', 'short-pause-chance',
+    'short-pause-min', 'short-pause-max', 'long-pause-enabled',
+    'long-pause-chance', 'long-pause-min', 'long-pause-max',
+    'map-mode', 'prioritize-tournament',
     'target-biome', 'map-check-minutes',
     'bait-enabled', 'bait-tier', 'bait-guild-tournament-tier',
     'bait-derby-tier', 'bait-threshold', 'bait-quantity',
     'bait-check-seconds', 'active-min', 'active-max', 'rest-min',
-    'rest-max', 'quiet-start', 'quiet-end', 'verification-enabled',
+    'rest-max', 'quiet-enabled', 'quiet-start', 'quiet-end',
+    'quiet-game-auto-fishing-enabled', 'quiet-game-auto-fishing-auto-renew',
+    'verification-enabled',
     'verification-delay-min', 'verification-delay-max',
     'verification-attempts', 'poll-interval', 'stall-timeout-seconds',
     'navigation-timeout-seconds', 'recovery-error-count', 'toast',
@@ -922,28 +927,29 @@ function formatEstimate(milliseconds) {
         : `约 ${days} 天`;
 }
 
-function estimateLevelUp(dashboard, today) {
+function estimateLevelUp(dashboard, experienceRate) {
     const xp = Number(dashboard?.xp);
     const xpToNext = Number(dashboard?.xpToNext);
-    const earnedXp = Number(today?.xp);
-    const startedAt = Date.parse(today?.startedAt);
+    const xpPerHour = Number(experienceRate?.xpPerHour);
 
     if (
         !Number.isFinite(xp) ||
         !Number.isFinite(xpToNext) ||
         xpToNext <= 0 ||
-        !Number.isFinite(earnedXp) ||
-        earnedXp <= 0 ||
-        !Number.isFinite(startedAt)
+        !Number.isFinite(xpPerHour) ||
+        xpPerHour <= 0
     ) {
         return null;
     }
 
     const remainingXp = Math.max(0, xpToNext - xp);
-    const elapsedMs = Math.max(60_000, Date.now() - startedAt);
-    const xpPerMs = earnedXp / elapsedMs;
 
-    return xpPerMs > 0 ? remainingXp / xpPerMs : null;
+    return {
+        remainingXp,
+        remainingMs: remainingXp / xpPerHour * 3_600_000,
+        xpPerHour,
+        levelsPerHour: xpPerHour / xpToNext,
+    };
 }
 
 function replaceTableRows(body, rows, { colspan, emptyMessage }) {
@@ -952,10 +958,16 @@ function replaceTableRows(body, rows, { colspan, emptyMessage }) {
     for (const values of rows) {
         const row = document.createElement('tr');
 
-        for (const content of values) {
+        for (const value of values) {
             const cell = document.createElement('td');
+            const content = value && typeof value === 'object'
+                ? value.text
+                : value;
 
             cell.textContent = content;
+            if (value && typeof value === 'object' && value.tone) {
+                cell.dataset.tone = value.tone;
+            }
             row.append(cell);
         }
         fragment.append(row);
@@ -975,6 +987,17 @@ function replaceTableRows(body, rows, { colspan, emptyMessage }) {
     body.replaceChildren(fragment);
 }
 
+function tableNumber(value, tone, maximumFractionDigits = 2) {
+    return {
+        text: formatNumber(value, maximumFractionDigits),
+        tone: typeof tone === 'function' ? tone(Number(value) || 0) : tone,
+    };
+}
+
+function signedTone(value) {
+    return value > 0 ? 'positive' : value < 0 ? 'negative' : 'neutral';
+}
+
 function fillSettings(snapshot) {
     const settings = snapshot.settings;
 
@@ -986,6 +1009,22 @@ function fillSettings(snapshot) {
     elements['classic-mode'].checked = settings.features.fishing.enforceClassicMode;
     elements['click-delay-min'].value = settings.features.fishing.clickDelayMinMs;
     elements['click-delay-max'].value = settings.features.fishing.clickDelayMaxMs;
+    elements['short-pause-enabled'].checked =
+        settings.features.fishing.shortPauseEnabled;
+    elements['short-pause-chance'].value =
+        settings.features.fishing.shortPauseChancePercent;
+    elements['short-pause-min'].value =
+        settings.features.fishing.shortPauseMinMs;
+    elements['short-pause-max'].value =
+        settings.features.fishing.shortPauseMaxMs;
+    elements['long-pause-enabled'].checked =
+        settings.features.fishing.longPauseEnabled;
+    elements['long-pause-chance'].value =
+        settings.features.fishing.longPauseChancePercent;
+    elements['long-pause-min'].value =
+        settings.features.fishing.longPauseMinMs;
+    elements['long-pause-max'].value =
+        settings.features.fishing.longPauseMaxMs;
     elements['map-mode'].value = settings.features.map.mode;
     elements['prioritize-tournament'].checked =
         settings.features.map.prioritizeTournament;
@@ -1004,8 +1043,13 @@ function fillSettings(snapshot) {
     elements['active-max'].value = settings.schedule.activeMaxMinutes;
     elements['rest-min'].value = settings.schedule.restMinMinutes;
     elements['rest-max'].value = settings.schedule.restMaxMinutes;
+    elements['quiet-enabled'].checked = settings.schedule.quietEnabled;
     elements['quiet-start'].value = settings.schedule.quietStartHour;
     elements['quiet-end'].value = settings.schedule.quietEndHour;
+    elements['quiet-game-auto-fishing-enabled'].checked =
+        settings.schedule.quietGameAutoFishingEnabled;
+    elements['quiet-game-auto-fishing-auto-renew'].checked =
+        settings.schedule.quietGameAutoFishingAutoRenew;
     elements['verification-enabled'].checked = settings.features.verification.enabled;
     elements['verification-delay-min'].value = settings.features.verification.stepDelayMinMs;
     elements['verification-delay-max'].value = settings.features.verification.stepDelayMaxMs;
@@ -1016,6 +1060,8 @@ function fillSettings(snapshot) {
     elements['recovery-error-count'].value = settings.advanced.recoveryErrorCount;
     state.settingsDirty = false;
     updateMapTargetState();
+    updateFishingPauseState();
+    updateQuietSettingsState();
     renderSettingsMeta();
 }
 
@@ -1034,8 +1080,13 @@ function collectSettings() {
             activeMaxMinutes: integer('active-max'),
             restMinMinutes: integer('rest-min'),
             restMaxMinutes: integer('rest-max'),
+            quietEnabled: elements['quiet-enabled'].checked,
             quietStartHour: integer('quiet-start'),
             quietEndHour: integer('quiet-end'),
+            quietGameAutoFishingEnabled:
+                elements['quiet-game-auto-fishing-enabled'].checked,
+            quietGameAutoFishingAutoRenew:
+                elements['quiet-game-auto-fishing-auto-renew'].checked,
         },
         features: {
             fishing: {
@@ -1043,6 +1094,15 @@ function collectSettings() {
                 enforceClassicMode: elements['classic-mode'].checked,
                 clickDelayMinMs: integer('click-delay-min'),
                 clickDelayMaxMs: integer('click-delay-max'),
+                shortPauseEnabled:
+                    elements['short-pause-enabled'].checked,
+                shortPauseChancePercent: integer('short-pause-chance'),
+                shortPauseMinMs: integer('short-pause-min'),
+                shortPauseMaxMs: integer('short-pause-max'),
+                longPauseEnabled: elements['long-pause-enabled'].checked,
+                longPauseChancePercent: integer('long-pause-chance'),
+                longPauseMinMs: integer('long-pause-min'),
+                longPauseMaxMs: integer('long-pause-max'),
             },
             map: {
                 mode: mapMode,
@@ -1088,6 +1148,38 @@ function updateMapTargetState() {
 
     elements['target-biome'].disabled = !fixed;
     elements['target-biome'].required = fixed;
+}
+
+function updateFishingPauseState() {
+    const shortEnabled = elements['short-pause-enabled'].checked;
+    const longEnabled = elements['long-pause-enabled'].checked;
+
+    for (const id of [
+        'short-pause-chance',
+        'short-pause-min',
+        'short-pause-max',
+    ]) {
+        elements[id].disabled = !shortEnabled;
+    }
+    for (const id of [
+        'long-pause-chance',
+        'long-pause-min',
+        'long-pause-max',
+    ]) {
+        elements[id].disabled = !longEnabled;
+    }
+}
+
+function updateQuietSettingsState() {
+    const quietEnabled = elements['quiet-enabled'].checked;
+    const gameAutoFishingEnabled = quietEnabled &&
+        elements['quiet-game-auto-fishing-enabled'].checked;
+
+    elements['quiet-start'].disabled = !quietEnabled;
+    elements['quiet-end'].disabled = !quietEnabled;
+    elements['quiet-game-auto-fishing-enabled'].disabled = !quietEnabled;
+    elements['quiet-game-auto-fishing-auto-renew'].disabled =
+        !gameAutoFishingEnabled;
 }
 
 function renderSettingsMeta() {
@@ -1205,6 +1297,9 @@ function renderOverview() {
     elements['today-gold'].textContent = formatNumber(today.gold);
     elements['today-xp'].textContent = formatNumber(today.xp);
     elements['today-fish'].textContent = formatNumber(today.fish, 0);
+    elements['current-gold'].textContent = dashboard?.gold != null
+        ? formatNumber(dashboard.gold)
+        : '—';
 
     const dashboardBaitId = dashboard?.bait?.id != null
         ? String(dashboard.bait.id)
@@ -1333,11 +1428,16 @@ function renderOverview() {
     elements['player-xp-text'].textContent = hasProgress
         ? `${formatNumber(xp)} / ${formatNumber(xpToNext)} XP`
         : '等待 Worker 读取角色数据';
-    const levelEta = estimateLevelUp(dashboard, today);
+    const levelEstimate = estimateLevelUp(dashboard, stats.experienceRate);
 
     elements['level-eta'].textContent = hasProgress && xp >= xpToNext
         ? '预计升级：即将完成'
-        : `预计升级：${formatEstimate(levelEta)}`;
+        : hasProgress
+            ? `剩余 ${formatNumber(Math.max(0, xpToNext - xp))} XP · ${formatEstimate(levelEstimate?.remainingMs)}`
+            : '预计升级：—';
+    elements['level-rate'].textContent = levelEstimate
+        ? `${formatNumber(levelEstimate.xpPerHour, 0)} XP/小时 · ${formatNumber(levelEstimate.levelsPerHour, 2)} 级/小时 · 最近 ${formatNumber(stats.experienceRate.sampleCount, 0)} 杆`
+        : '经验速度：等待至少 2 次抛竿';
     elements['current-biome'].textContent = dashboard?.biome
         ? `${dashboard.biome.name} · B${dashboard.biome.id}`
         : stats.lastContext?.biomeName || '—';
@@ -1621,7 +1721,7 @@ function renderStats() {
     const snapshot = state.stats || {};
     const today = snapshot.today || {};
     const total = snapshot.total || {};
-    const average = today.casts > 0 ? today.gold / today.casts : 0;
+    const average = today.casts > 0 ? today.netGold / today.casts : 0;
 
     elements['stats-period'].textContent = total.casts > 0
         ? `累计自 ${formatDate(total.startedAt)}，今日按服务器本地时间统计。`
@@ -1647,53 +1747,67 @@ function renderStats() {
     elements['stats-total-xp'].textContent = formatNumber(total.xp);
     elements['stats-total-bait-cost'].textContent = formatNumber(total.baitCost);
     elements['stats-total-net-gold'].textContent = formatNumber(total.netGold);
+    renderSignedTone(elements['stats-gold-average'], average);
+    renderSignedTone(elements['stats-total-net-gold'], total.netGold);
     renderRarityCounts(elements['rarity-list'], today.rarityCounts, '暂无数据');
 
     const dayRows = (snapshot.recentDays || []).map(day => [
             day.day,
-            formatNumber(day.casts, 0),
-            formatNumber(day.fish, 0),
-            formatNumber(day.gold),
-            formatNumber(day.fishGold),
-            formatNumber(day.baitCost),
-            formatNumber(day.netGold),
-            formatNumber(day.xp),
+            tableNumber(day.casts, 'casts', 0),
+            tableNumber(day.fish, 'fish', 0),
+            tableNumber(day.gold, 'income'),
+            tableNumber(day.fishGold, 'gold'),
+            tableNumber(day.baitCost, 'cost'),
+            tableNumber(day.netGold, signedTone),
+            tableNumber(
+                day.casts > 0 ? day.netGold / day.casts : 0,
+                signedTone,
+            ),
+            tableNumber(day.xp, 'xp'),
         ]);
 
     replaceTableRows(elements['daily-stats-body'], dayRows, {
-        colspan: 8,
+        colspan: 9,
         emptyMessage: '暂无每日收益数据',
     });
 
     const baitRows = (snapshot.baitSummaries || []).map(summary => [
         summary.baitName || summary.baitId,
-        formatNumber(summary.casts, 0),
-        formatNumber(summary.fish, 0),
-        formatNumber(summary.gold),
-        formatNumber(summary.fishGold),
-        formatNumber(summary.baitCost),
-        formatNumber(summary.netGold),
-        formatNumber(summary.xp),
+        tableNumber(summary.casts, 'casts', 0),
+        tableNumber(summary.fish, 'fish', 0),
+        tableNumber(summary.gold, 'income'),
+        tableNumber(summary.fishGold, 'gold'),
+        tableNumber(summary.baitCost, 'cost'),
+        tableNumber(summary.netGold, signedTone),
+        tableNumber(
+            summary.casts > 0 ? summary.netGold / summary.casts : 0,
+            signedTone,
+        ),
+        tableNumber(summary.xp, 'xp'),
     ]);
 
     replaceTableRows(elements['bait-stats-body'], baitRows, {
-        colspan: 8,
+        colspan: 9,
         emptyMessage: '暂无鱼饵收益数据',
     });
 
     const biomeRows = (snapshot.biomeSummaries || []).map(summary => [
         summary.biomeName || `地图 ${summary.biomeId}`,
-        formatNumber(summary.casts, 0),
-        formatNumber(summary.fish, 0),
-        formatNumber(summary.gold),
-        formatNumber(summary.fishGold),
-        formatNumber(summary.baitCost),
-        formatNumber(summary.netGold),
-        formatNumber(summary.xp),
+        tableNumber(summary.casts, 'casts', 0),
+        tableNumber(summary.fish, 'fish', 0),
+        tableNumber(summary.gold, 'income'),
+        tableNumber(summary.fishGold, 'gold'),
+        tableNumber(summary.baitCost, 'cost'),
+        tableNumber(summary.netGold, signedTone),
+        tableNumber(
+            summary.casts > 0 ? summary.netGold / summary.casts : 0,
+            signedTone,
+        ),
+        tableNumber(summary.xp, 'xp'),
     ]);
 
     replaceTableRows(elements['biome-stats-body'], biomeRows, {
-        colspan: 8,
+        colspan: 9,
         emptyMessage: '暂无地图收益数据',
     });
 }
@@ -2050,6 +2164,22 @@ elements['settings-form'].addEventListener('input', () => {
     renderSettingsMeta();
 });
 elements['map-mode'].addEventListener('change', updateMapTargetState);
+elements['short-pause-enabled'].addEventListener(
+    'change',
+    updateFishingPauseState,
+);
+elements['long-pause-enabled'].addEventListener(
+    'change',
+    updateFishingPauseState,
+);
+elements['quiet-enabled'].addEventListener(
+    'change',
+    updateQuietSettingsState,
+);
+elements['quiet-game-auto-fishing-enabled'].addEventListener(
+    'change',
+    updateQuietSettingsState,
+);
 
 elements['settings-form'].addEventListener('submit', async event => {
     event.preventDefault();

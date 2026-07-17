@@ -20,8 +20,11 @@ export const DEFAULT_SETTINGS = deepFreeze({
         activeMaxMinutes: 70,
         restMinMinutes: 5,
         restMaxMinutes: 15,
+        quietEnabled: true,
         quietStartHour: 0,
         quietEndHour: 8,
+        quietGameAutoFishingEnabled: false,
+        quietGameAutoFishingAutoRenew: false,
     },
     features: {
         fishing: {
@@ -29,6 +32,14 @@ export const DEFAULT_SETTINGS = deepFreeze({
             enforceClassicMode: true,
             clickDelayMinMs: 500,
             clickDelayMaxMs: 2_000,
+            shortPauseEnabled: true,
+            shortPauseChancePercent: 8,
+            shortPauseMinMs: 5_000,
+            shortPauseMaxMs: 10_000,
+            longPauseEnabled: true,
+            longPauseChancePercent: 2,
+            longPauseMinMs: 20_000,
+            longPauseMaxMs: 40_000,
         },
         map: {
             mode: 'auto',
@@ -162,8 +173,11 @@ export function validateSettings(input) {
         'activeMaxMinutes',
         'restMinMinutes',
         'restMaxMinutes',
+        'quietEnabled',
         'quietStartHour',
         'quietEndHour',
+        'quietGameAutoFishingEnabled',
+        'quietGameAutoFishingAutoRenew',
     ], '挂机计划');
 
     const features = expectObject(root.features, '功能配置');
@@ -179,6 +193,14 @@ export function validateSettings(input) {
         'enforceClassicMode',
         'clickDelayMinMs',
         'clickDelayMaxMs',
+        'shortPauseEnabled',
+        'shortPauseChancePercent',
+        'shortPauseMinMs',
+        'shortPauseMaxMs',
+        'longPauseEnabled',
+        'longPauseChancePercent',
+        'longPauseMinMs',
+        'longPauseMaxMs',
     ], '自动钓鱼配置');
 
     const map = expectObject(features.map, '自动地图配置');
@@ -254,6 +276,10 @@ export function validateSettings(input) {
                 '最长休息时间',
                 { min: 1, max: 1_440 },
             ),
+            quietEnabled: readBoolean(
+                schedule.quietEnabled,
+                '夜间休息开关',
+            ),
             quietStartHour: readInteger(
                 schedule.quietStartHour,
                 '夜间停机开始小时',
@@ -263,6 +289,14 @@ export function validateSettings(input) {
                 schedule.quietEndHour,
                 '夜间停机结束小时',
                 { max: 23 },
+            ),
+            quietGameAutoFishingEnabled: readBoolean(
+                schedule.quietGameAutoFishingEnabled,
+                '夜间游戏自动钓鱼开关',
+            ),
+            quietGameAutoFishingAutoRenew: readBoolean(
+                schedule.quietGameAutoFishingAutoRenew,
+                '夜间游戏自动钓鱼续期开关',
             ),
         },
         features: {
@@ -281,6 +315,44 @@ export function validateSettings(input) {
                     fishing.clickDelayMaxMs,
                     '最长点击延迟',
                     { max: 60_000 },
+                ),
+                shortPauseEnabled: readBoolean(
+                    fishing.shortPauseEnabled,
+                    '短暂停顿开关',
+                ),
+                shortPauseChancePercent: readInteger(
+                    fishing.shortPauseChancePercent,
+                    '短暂停顿概率',
+                    { max: 100 },
+                ),
+                shortPauseMinMs: readInteger(
+                    fishing.shortPauseMinMs,
+                    '短暂停顿最短时间',
+                    { max: 300_000 },
+                ),
+                shortPauseMaxMs: readInteger(
+                    fishing.shortPauseMaxMs,
+                    '短暂停顿最长时间',
+                    { max: 300_000 },
+                ),
+                longPauseEnabled: readBoolean(
+                    fishing.longPauseEnabled,
+                    '较长停顿开关',
+                ),
+                longPauseChancePercent: readInteger(
+                    fishing.longPauseChancePercent,
+                    '较长停顿概率',
+                    { max: 100 },
+                ),
+                longPauseMinMs: readInteger(
+                    fishing.longPauseMinMs,
+                    '较长停顿最短时间',
+                    { max: 3_600_000 },
+                ),
+                longPauseMaxMs: readInteger(
+                    fishing.longPauseMaxMs,
+                    '较长停顿最长时间',
+                    { max: 3_600_000 },
                 ),
             },
             map: {
@@ -409,8 +481,9 @@ export function validateSettings(input) {
     }
 
     if (
+        normalized.schedule.quietEnabled &&
         normalized.schedule.quietStartHour ===
-        normalized.schedule.quietEndHour
+            normalized.schedule.quietEndHour
     ) {
         throw new SettingsValidationError(
             '夜间停机的开始和结束小时不能相同。',
@@ -423,6 +496,41 @@ export function validateSettings(input) {
     ) {
         throw new SettingsValidationError(
             '最短点击延迟不能大于最长点击延迟。',
+        );
+    }
+
+    if (
+        normalized.features.fishing.shortPauseMinMs >
+        normalized.features.fishing.shortPauseMaxMs
+    ) {
+        throw new SettingsValidationError(
+            '短暂停顿最短时间不能大于最长时间。',
+        );
+    }
+
+    if (
+        normalized.features.fishing.longPauseMinMs >
+        normalized.features.fishing.longPauseMaxMs
+    ) {
+        throw new SettingsValidationError(
+            '较长停顿最短时间不能大于最长时间。',
+        );
+    }
+
+    if (
+        (
+            normalized.features.fishing.shortPauseEnabled
+                ? normalized.features.fishing.shortPauseChancePercent
+                : 0
+        ) +
+        (
+            normalized.features.fishing.longPauseEnabled
+                ? normalized.features.fishing.longPauseChancePercent
+                : 0
+        ) > 100
+    ) {
+        throw new SettingsValidationError(
+            '短暂停顿和较长停顿的概率之和不能超过 100%。',
         );
     }
 

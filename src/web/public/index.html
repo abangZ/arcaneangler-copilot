@@ -86,10 +86,11 @@
                 </section>
 
                 <section class="kpi-grid" aria-label="今日收益">
+                    <article class="kpi panel"><span>当前金币</span><strong id="current-gold" data-tone="gold">—</strong></article>
                     <article class="kpi panel"><span>今日抛竿</span><strong id="today-casts">0</strong></article>
-                    <article class="kpi panel"><span>今日金币</span><strong id="today-gold">0</strong></article>
-                    <article class="kpi panel"><span>今日经验</span><strong id="today-xp">0</strong></article>
-                    <article class="kpi panel"><span>今日鱼获</span><strong id="today-fish">0</strong></article>
+                    <article class="kpi panel"><span>今日金币</span><strong id="today-gold" data-tone="income">0</strong></article>
+                    <article class="kpi panel"><span>今日经验</span><strong id="today-xp" data-tone="xp">0</strong></article>
+                    <article class="kpi panel"><span>今日鱼获</span><strong id="today-fish" data-tone="fish">0</strong></article>
                 </section>
 
                 <div class="overview-grid overview-summary-grid">
@@ -107,6 +108,7 @@
                                 <span id="player-xp-text">等待 Worker 读取角色数据</span>
                                 <span id="level-eta">预计升级：—</span>
                             </div>
+                            <div id="level-rate" class="level-rate">经验速度：等待至少 2 次抛竿</div>
                             <dl class="detail-list map-status-list">
                                 <div><dt>当前地图</dt><dd id="current-biome">—</dd></div>
                                 <div><dt>地图效果</dt><dd id="current-biome-effect">—</dd></div>
@@ -224,13 +226,13 @@
 
                 <section class="kpi-grid stats-kpis">
                     <article class="kpi panel"><span>今日抛竿</span><strong id="stats-today-casts">0</strong></article>
-                    <article class="kpi panel"><span>鱼获</span><strong id="stats-today-fish">0</strong></article>
-                    <article class="kpi panel"><span>金币</span><strong id="stats-today-gold">0</strong></article>
-                    <article class="kpi panel"><span>经验</span><strong id="stats-today-xp">0</strong></article>
-                    <article class="kpi panel"><span>遗物</span><strong id="stats-today-relics">0</strong></article>
-                    <article class="kpi panel"><span>宝箱</span><strong id="stats-today-chests">0</strong></article>
+                    <article class="kpi panel"><span>鱼获</span><strong id="stats-today-fish" data-tone="fish">0</strong></article>
+                    <article class="kpi panel"><span>金币</span><strong id="stats-today-gold" data-tone="income">0</strong></article>
+                    <article class="kpi panel"><span>经验</span><strong id="stats-today-xp" data-tone="xp">0</strong></article>
+                    <article class="kpi panel"><span>遗物</span><strong id="stats-today-relics" data-tone="relic">0</strong></article>
+                    <article class="kpi panel"><span>宝箱</span><strong id="stats-today-chests" data-tone="gold">0</strong></article>
                     <article class="kpi panel"><span>装备</span><strong id="stats-today-gears">0</strong></article>
-                    <article class="kpi panel"><span>每竿金币</span><strong id="stats-gold-average">0</strong></article>
+                    <article class="kpi panel"><span>每竿净收益</span><strong id="stats-gold-average">0</strong></article>
                 </section>
 
                 <div class="stats-layout">
@@ -239,10 +241,10 @@
                         <dl class="detail-list compact">
                             <div><dt>抛竿</dt><dd id="stats-total-casts">0</dd></div>
                             <div><dt>鱼获</dt><dd id="stats-total-fish">0</dd></div>
-                            <div><dt>直接金币</dt><dd id="stats-total-gold">0</dd></div>
-                            <div><dt>鱼获价值</dt><dd id="stats-total-fish-gold">0</dd></div>
-                            <div><dt>经验</dt><dd id="stats-total-xp">0</dd></div>
-                            <div><dt>鱼饵成本</dt><dd id="stats-total-bait-cost">0</dd></div>
+                            <div><dt>直接金币</dt><dd id="stats-total-gold" data-tone="income">0</dd></div>
+                            <div><dt>鱼获价值</dt><dd id="stats-total-fish-gold" data-tone="gold">0</dd></div>
+                            <div><dt>经验</dt><dd id="stats-total-xp" data-tone="xp">0</dd></div>
+                            <div><dt>鱼饵成本</dt><dd id="stats-total-bait-cost" data-tone="cost">0</dd></div>
                             <div><dt>净收益</dt><dd id="stats-total-net-gold">0</dd></div>
                         </dl>
                     </section>
@@ -258,7 +260,7 @@
                     <h2>每日收益</h2>
                     <div class="table-wrap">
                         <table>
-                            <thead><tr><th>日期</th><th>抛竿</th><th>鱼获</th><th>直接金币</th><th>鱼获价值</th><th>鱼饵成本</th><th>净收益</th><th>经验</th></tr></thead>
+                            <thead><tr><th>日期</th><th>抛竿</th><th>鱼获</th><th>直接金币</th><th>鱼获价值</th><th>鱼饵成本</th><th>净收益</th><th>每竿净收益</th><th>经验</th></tr></thead>
                             <tbody id="daily-stats-body"></tbody>
                         </table>
                     </div>
@@ -268,7 +270,7 @@
                     <h2>每种鱼饵收益</h2>
                     <div class="table-wrap">
                         <table>
-                            <thead><tr><th>鱼饵</th><th>抛竿</th><th>鱼获</th><th>直接金币</th><th>鱼获价值</th><th>成本</th><th>净收益</th><th>经验</th></tr></thead>
+                            <thead><tr><th>鱼饵</th><th>抛竿</th><th>鱼获</th><th>直接金币</th><th>鱼获价值</th><th>成本</th><th>净收益</th><th>每竿净收益</th><th>经验</th></tr></thead>
                             <tbody id="bait-stats-body"></tbody>
                         </table>
                     </div>
@@ -278,7 +280,7 @@
                     <h2>每张地图收益</h2>
                     <div class="table-wrap">
                         <table>
-                            <thead><tr><th>地图</th><th>抛竿</th><th>鱼获</th><th>直接金币</th><th>鱼获价值</th><th>鱼饵成本</th><th>净收益</th><th>经验</th></tr></thead>
+                            <thead><tr><th>地图</th><th>抛竿</th><th>鱼获</th><th>直接金币</th><th>鱼获价值</th><th>鱼饵成本</th><th>净收益</th><th>每竿净收益</th><th>经验</th></tr></thead>
                             <tbody id="biome-stats-body"></tbody>
                         </table>
                     </div>
@@ -415,6 +417,20 @@
                         </div>
                     </section>
 
+                    <details>
+                        <summary>点击停顿</summary>
+                        <div class="form-grid details-content">
+                            <label class="toggle-row"><span>启用短暂停顿</span><input id="short-pause-enabled" type="checkbox"></label>
+                            <label><span>短暂停顿概率（%）</span><input id="short-pause-chance" type="number" min="0" max="100" required></label>
+                            <label><span>短暂停顿最短（ms）</span><input id="short-pause-min" type="number" min="0" max="300000" required></label>
+                            <label><span>短暂停顿最长（ms）</span><input id="short-pause-max" type="number" min="0" max="300000" required></label>
+                            <label class="toggle-row"><span>启用较长停顿</span><input id="long-pause-enabled" type="checkbox"></label>
+                            <label><span>较长停顿概率（%）</span><input id="long-pause-chance" type="number" min="0" max="100" required></label>
+                            <label><span>较长停顿最短（ms）</span><input id="long-pause-min" type="number" min="0" max="3600000" required></label>
+                            <label><span>较长停顿最长（ms）</span><input id="long-pause-max" type="number" min="0" max="3600000" required></label>
+                        </div>
+                    </details>
+
                     <details open>
                         <summary>地图与 Events</summary>
                         <div class="form-grid details-content">
@@ -445,8 +461,11 @@
                             <label><span>运行最长（分钟）</span><input id="active-max" type="number" min="1" max="1440" required></label>
                             <label><span>休息最短（分钟）</span><input id="rest-min" type="number" min="1" max="1440" required></label>
                             <label><span>休息最长（分钟）</span><input id="rest-max" type="number" min="1" max="1440" required></label>
+                            <label class="toggle-row"><span>启用夜间休息</span><input id="quiet-enabled" type="checkbox"></label>
                             <label><span>夜间停机开始（时）</span><input id="quiet-start" type="number" min="0" max="23" required></label>
                             <label><span>夜间停机结束（时）</span><input id="quiet-end" type="number" min="0" max="23" required></label>
+                            <label class="toggle-row"><span>夜间使用游戏自动钓鱼</span><input id="quiet-game-auto-fishing-enabled" type="checkbox"></label>
+                            <label class="toggle-row"><span>游戏自动钓鱼结束后续期</span><input id="quiet-game-auto-fishing-auto-renew" type="checkbox"></label>
                         </div>
                     </details>
 

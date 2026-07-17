@@ -282,6 +282,41 @@ try {
     assert.equal(reloaded.get().breakdowns[0].casts, 1);
     assert.equal(reloaded.get().lastFish.name, 'Moonfin');
 
+    const ratePath = path.join(tempDirectory, 'rate-stats.json');
+    let rateTime = new Date('2026-07-16T01:00:00.000Z');
+    const rateStore = new StatsStore({
+        filePath: ratePath,
+        now: () => new Date(rateTime),
+    });
+
+    await rateStore.initialize();
+    await rateStore.recordCast({ xpGained: 100 });
+    rateTime = new Date('2026-07-16T01:10:00.000Z');
+    await rateStore.recordCast({ xpGained: 200 });
+    rateTime = new Date('2026-07-16T01:20:00.000Z');
+    await rateStore.recordCast({ xpGained: 300 });
+    assert.deepEqual(rateStore.get().experienceRate, {
+        startedAt: '2026-07-16T01:00:00.000Z',
+        updatedAt: '2026-07-16T01:20:00.000Z',
+        sampleCount: 3,
+        elapsedMs: 20 * 60_000,
+        xp: 500,
+        xpPerHour: 1_500,
+    });
+    rateTime = new Date('2026-07-16T03:00:00.000Z');
+    await rateStore.recordCast({ xpGained: 400 });
+    assert.equal(rateStore.get().experienceRate, null);
+    rateTime = new Date('2026-07-16T03:10:00.000Z');
+    await rateStore.recordCast({ xpGained: 500 });
+    assert.equal(rateStore.get().experienceRate.xpPerHour, 3_000);
+
+    const reloadedRateStore = new StatsStore({
+        filePath: ratePath,
+        now: () => new Date(rateTime),
+    });
+    await reloadedRateStore.initialize();
+    assert.equal(reloadedRateStore.get().experienceRate.xpPerHour, 3_000);
+
     const legacyPath = path.join(tempDirectory, 'legacy-stats.json');
     await fs.writeFile(legacyPath, JSON.stringify({
         version: 1,
@@ -324,5 +359,5 @@ try {
 }
 
 console.log(
-    'Stats smoke passed: cast deltas, daily totals, persistence and context work.',
+    'Stats smoke passed: cast deltas, rolling XP rate, daily totals, persistence and context work.',
 );

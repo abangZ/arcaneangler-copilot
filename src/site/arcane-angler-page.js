@@ -1003,6 +1003,7 @@ export class ArcaneAnglerPage {
 
             return {
                 playerUserId,
+                gold: Number(player?.gold),
                 level: Number(player?.level),
                 xp: Number(player?.xp),
                 xpToNext: Number(player?.xpToNext),
@@ -1146,6 +1147,7 @@ export class ArcaneAnglerPage {
         }
 
         return {
+            gold: normalizedNumber(snapshot.gold),
             level: normalizedNumber(snapshot.level),
             xp: normalizedNumber(snapshot.xp),
             xpToNext: normalizedNumber(snapshot.xpToNext, { positive: true }),
@@ -1750,6 +1752,119 @@ export class ArcaneAnglerPage {
             message: '无法进入钓鱼页面',
             shouldStop: this.shouldStop,
         });
+    }
+
+    async getGameAutoFishingButton() {
+        const titledButton = await firstVisible(this.page.locator(
+            'button[title="Start Auto-Cast"], ' +
+            'button[title="Stop Auto-Cast"]',
+        ));
+
+        if (titledButton) {
+            return titledButton;
+        }
+
+        return firstVisible(this.page.locator(
+            'button[class*="flex-[15]"]',
+        ));
+    }
+
+    async getGameAutoFishingState() {
+        const button = await this.getGameAutoFishingButton();
+
+        if (!button) {
+            return {
+                available: false,
+                active: false,
+                enabled: false,
+            };
+        }
+
+        const [title, text, enabled] = await Promise.all([
+            button.getAttribute('title'),
+            button.textContent(),
+            button.isEnabled(),
+        ]);
+        const active = title === 'Stop Auto-Cast' ||
+            String(text || '').includes('🛑');
+
+        return {
+            available: true,
+            active,
+            enabled,
+        };
+    }
+
+    async ensureGameAutoFishingActive() {
+        await this.openFishingPage();
+        await this.dismissBlockingOverlays();
+
+        let state = null;
+
+        await waitUntil(async () => {
+            state = await this.getGameAutoFishingState();
+            return state.available;
+        }, {
+            timeoutMs: this.config.navigationTimeoutMs,
+            message: '钓鱼页面中找不到游戏自动钓鱼按钮',
+            shouldStop: this.shouldStop,
+        });
+
+        if (state.active || !state.enabled) {
+            return state;
+        }
+
+        const button = await this.getGameAutoFishingButton();
+
+        await this.trustedClick(button);
+        await waitUntil(async () => {
+            state = await this.getGameAutoFishingState();
+            return state.active;
+        }, {
+            timeoutMs: this.config.navigationTimeoutMs,
+            message: '点击后游戏自动钓鱼没有进入运行状态',
+            shouldStop: this.shouldStop,
+        });
+
+        return state;
+    }
+
+    async stopGameAutoFishing() {
+        await this.openFishingPage();
+        let state = await this.getGameAutoFishingState();
+
+        if (!state.available || !state.active) {
+            return state;
+        }
+
+        if (!state.enabled) {
+            await waitUntil(async () => {
+                state = await this.getGameAutoFishingState();
+                return !state.active || state.enabled;
+            }, {
+                timeoutMs: this.config.navigationTimeoutMs,
+                message: '游戏自动钓鱼停止按钮一直处于冷却状态',
+                shouldStop: this.shouldStop,
+            });
+
+            if (!state.active) {
+                return state;
+            }
+        }
+
+        const button = await this.getGameAutoFishingButton();
+
+        await this.trustedClick(button);
+        await waitUntil(async () => {
+            state = await this.getGameAutoFishingState();
+            return state.available && !state.active;
+        }, {
+            timeoutMs: this.config.navigationTimeoutMs,
+            message: '停止游戏自动钓鱼后状态没有更新',
+            shouldStop: this.shouldStop,
+        });
+
+        return state;
     }
 
     async getWorldBossAutomationState() {

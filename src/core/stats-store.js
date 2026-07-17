@@ -4,6 +4,8 @@ import path from 'node:path';
 const STATS_VERSION = 2;
 const LEGACY_STATS_VERSION = 1;
 const MAX_DAILY_SUMMARIES = 90;
+const EXPERIENCE_RATE_WINDOW_MS = 60 * 60 * 1_000;
+const MAX_EXPERIENCE_RATE_SAMPLES = 1_000;
 
 function clone(value) {
     return structuredClone(value);
@@ -202,6 +204,64 @@ function normalizeLastFish(value) {
         punishmentExpiresAt: nullableIsoDate(value.punishmentExpiresAt),
         caughtAt,
         context: normalizeContext(value.context),
+    };
+}
+
+function normalizeExperienceSamples(value) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    const samples = value
+        .map(sample => ({
+            caughtAt: nullableIsoDate(sample?.caughtAt),
+            xp: nonNegativeNumber(sample?.xp),
+        }))
+        .filter(sample => sample.caughtAt)
+        .sort((left, right) => left.caughtAt.localeCompare(right.caughtAt));
+    const latestTimestamp = Date.parse(samples.at(-1)?.caughtAt);
+
+    if (!Number.isFinite(latestTimestamp)) {
+        return [];
+    }
+
+    return samples
+        .filter(sample =>
+            latestTimestamp - Date.parse(sample.caughtAt) <=
+                EXPERIENCE_RATE_WINDOW_MS,
+        )
+        .slice(-MAX_EXPERIENCE_RATE_SAMPLES);
+}
+
+function calculateExperienceRate(samples) {
+    if (samples.length < 2) {
+        return null;
+    }
+
+    const startedAt = samples[0].caughtAt;
+    const updatedAt = samples.at(-1).caughtAt;
+    const elapsedMs = Date.parse(updatedAt) - Date.parse(startedAt);
+    const xp = samples
+        .slice(1)
+        .reduce((sum, sample) => sum + sample.xp, 0);
+    const xpPerHour = xp / elapsedMs * 3_600_000;
+
+    if (
+        elapsedMs <= 0 ||
+        xp <= 0 ||
+        !Number.isFinite(xpPerHour) ||
+        xpPerHour <= 0
+    ) {
+        return null;
+    }
+
+    return {
+        startedAt,
+        updatedAt,
+        sampleCount: samples.length,
+        elapsedMs,
+        xp,
+        xpPerHour,
     };
 }
 
@@ -418,6 +478,7 @@ export class StatsStore {
             days: {},
             breakdowns: {},
             dailyBreakdowns: {},
+            recentExperienceSamples: [],
             lastContext: null,
             lastFish: null,
         };
@@ -481,6 +542,11 @@ export class StatsStore {
                     )
                     : {},
                 dailyBreakdowns,
+                recentExperienceSamples: stored.version === STATS_VERSION
+                    ? normalizeExperienceSamples(
+                        stored.recentExperienceSamples,
+                    )
+                    : [],
                 lastContext: normalizeContext(stored.lastContext),
                 lastFish: stored.version === STATS_VERSION
                     ? normalizeLastFish(stored.lastFish)
@@ -575,6 +641,9 @@ export class StatsStore {
                 : null,
             lastContext: this.value.lastContext,
             lastFish: this.value.lastFish,
+            experienceRate: calculateExperienceRate(
+                this.value.recentExperienceSamples,
+            ),
             loadError: this.loadError,
         });
     }
@@ -622,6 +691,10 @@ export class StatsStore {
                     updatedAt,
                 ),
             },
+            recentExperienceSamples: normalizeExperienceSamples([
+                ...this.value.recentExperienceSamples,
+                { caughtAt: updatedAt, xp: cast.xp },
+            ]),
             lastContext: cast.context || this.value.lastContext,
             lastFish: cast.lastFish
                 ? {

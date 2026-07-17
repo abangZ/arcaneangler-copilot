@@ -11,8 +11,11 @@ const config = {
     activeMaxMinutes: 70,
     restMinMinutes: 5,
     restMaxMinutes: 15,
+    quietEnabled: true,
     quietStartHour: 0,
     quietEndHour: 8,
+    quietGameAutoFishingEnabled: false,
+    quietGameAutoFishingAutoRenew: false,
 };
 
 let now = new Date(2026, 6, 14, 9, 0, 0, 0);
@@ -77,6 +80,18 @@ assert.equal(gate.mode, OPERATION_STATES.QUIET);
 assert.equal(gate.resumeAt.getHours(), 9);
 assert.equal(gate.waitMs, 9 * 60 * 60 * 1_000);
 assert.equal(quietScheduler.canOperateNow(), false);
+
+const disabledQuietSchedule = {
+    ...config,
+    quietEnabled: false,
+};
+quietScheduler.updateConfig(disabledQuietSchedule);
+gate = quietScheduler.evaluate();
+assert.equal(gate.mode, OPERATION_STATES.ACTIVE);
+assert.equal(gate.allowed, true);
+quietScheduler.updateConfig(config);
+gate = quietScheduler.evaluate();
+assert.equal(gate.mode, OPERATION_STATES.QUIET);
 
 quietNow = new Date(2026, 6, 15, 7, 59, 59, 0);
 gate = quietScheduler.evaluate();
@@ -361,6 +376,121 @@ assert.deepEqual(lifecycleEvents.slice(-3), [
 ]);
 assert.equal(engine.getState().punishmentExpiresAt, null);
 
+let quietAutoNow = new Date(2026, 6, 18, 1, 0, 0, 0);
+let quietAutoSchedule = {
+    ...config,
+    quietGameAutoFishingEnabled: true,
+};
+let gameAutoFishingActive = false;
+const quietAutoEvents = [];
+const quietAutoEngine = new AutomationEngine({
+    settings: {
+        get: () => ({
+            automationEnabled: true,
+            schedule: quietAutoSchedule,
+            advanced: { pollIntervalMs: 1, recoveryErrorCount: 3 },
+            features: {
+                fishing: { enabled: true },
+                worldBoss: { enabled: false },
+            },
+        }),
+    },
+    reporter: { update: async () => {} },
+    session: {
+        bootstrap: async () => quietAutoEvents.push('bootstrap'),
+        getCompetitionSchedule: () => [],
+        getActivePunishmentExpiresAt: () => null,
+        ensureGameAutoFishingActive: async () => {
+            quietAutoEvents.push('ensure-game-auto');
+            gameAutoFishingActive = true;
+            return { available: true, active: true, enabled: true };
+        },
+        getGameAutoFishingState: async () => {
+            quietAutoEvents.push('check-game-auto');
+            return {
+                available: true,
+                active: gameAutoFishingActive,
+                enabled: true,
+            };
+        },
+        stopGameAutoFishing: async () => {
+            quietAutoEvents.push('stop-game-auto');
+            gameAutoFishingActive = false;
+            return { available: true, active: false, enabled: true };
+        },
+        isClosed: () => false,
+    },
+    browserLifecycle: {
+        suspend: async () => quietAutoEvents.push('suspend'),
+        resume: async () => quietAutoEvents.push('resume'),
+    },
+});
+
+quietAutoEngine.scheduler = new OperationScheduler(quietAutoSchedule, {
+    now: () => new Date(quietAutoNow),
+    random: min => min,
+});
+quietAutoEngine.waitForQuietGameAutoFishing = async (_gate, state) => {
+    quietAutoEvents.push(`wait-game-auto:${state.active}`);
+};
+quietAutoEngine.register({
+    id: 'fishing',
+    label: '自动钓鱼',
+    priority: 100,
+    isEnabled: () => true,
+    reset: () => quietAutoEvents.push('reset:fishing'),
+    tick: async () => {
+        quietAutoEvents.push('tick:fishing');
+        return true;
+    },
+});
+
+await quietAutoEngine.runCycle();
+assert.deepEqual(quietAutoEvents, [
+    'reset:fishing',
+    'bootstrap',
+    'ensure-game-auto',
+    'wait-game-auto:true',
+]);
+assert.equal(quietAutoEngine.getState().browserSuspended, false);
+
+await quietAutoEngine.runCycle();
+assert.deepEqual(quietAutoEvents.slice(-2), [
+    'check-game-auto',
+    'wait-game-auto:true',
+]);
+
+gameAutoFishingActive = false;
+await quietAutoEngine.runCycle();
+assert.deepEqual(quietAutoEvents.slice(-2), [
+    'check-game-auto',
+    'wait-game-auto:false',
+]);
+assert.equal(
+    quietAutoEvents.filter(event => event === 'ensure-game-auto').length,
+    1,
+);
+
+quietAutoSchedule = {
+    ...quietAutoSchedule,
+    quietGameAutoFishingAutoRenew: true,
+};
+await quietAutoEngine.runCycle();
+assert.deepEqual(quietAutoEvents.slice(-3), [
+    'reset:fishing',
+    'ensure-game-auto',
+    'wait-game-auto:true',
+]);
+
+quietAutoNow = new Date(2026, 6, 18, 9, 0, 0, 0);
+await quietAutoEngine.runCycle();
+assert.ok(
+    quietAutoEvents.indexOf('stop-game-auto') <
+    quietAutoEvents.lastIndexOf('tick:fishing'),
+);
+assert.equal(gameAutoFishingActive, false);
+assert.equal(quietAutoEngine.getState().quietGameAutoFishing.active, false);
+
 console.log(
-    'Scheduler smoke passed: world boss priority, deferred rest, night wakeup and delayed morning resume work.',
+    'Scheduler smoke passed: quiet switches, game auto-fishing handoff, competition priority and delayed resume work.',
 );

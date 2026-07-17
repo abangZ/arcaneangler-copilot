@@ -14,16 +14,23 @@ function clone(value) {
 
 function migrateLegacyDefaults(settings) {
     const fishing = settings?.features?.fishing;
+    const schedule = settings?.schedule;
     const map = settings?.features?.map;
     const worldBoss = settings?.features?.worldBoss;
     const bait = settings?.features?.bait;
     let migrated = settings;
 
+    const ensureClone = () => {
+        if (migrated === settings) {
+            migrated = clone(settings);
+        }
+    };
+
     if (
         fishing?.clickDelayMinMs === 250 &&
         fishing?.clickDelayMaxMs === 800
     ) {
-        migrated = clone(settings);
+        ensureClone();
         migrated.features.fishing.clickDelayMinMs =
             DEFAULT_SETTINGS.features.fishing.clickDelayMinMs;
         migrated.features.fishing.clickDelayMaxMs =
@@ -31,17 +38,13 @@ function migrateLegacyDefaults(settings) {
     }
 
     if (map && typeof map.prioritizeTournament !== 'boolean') {
-        if (migrated === settings) {
-            migrated = clone(settings);
-        }
+        ensureClone();
 
         migrated.features.map.prioritizeTournament = true;
     }
 
     if (!worldBoss || typeof worldBoss.enabled !== 'boolean') {
-        if (migrated === settings) {
-            migrated = clone(settings);
-        }
+        ensureClone();
 
         migrated.features.worldBoss = clone(
             DEFAULT_SETTINGS.features.worldBoss,
@@ -55,9 +58,7 @@ function migrateLegacyDefaults(settings) {
             !Object.hasOwn(bait, 'derbyBaitTier')
         )
     ) {
-        if (migrated === settings) {
-            migrated = clone(settings);
-        }
+        ensureClone();
 
         const legacyBaitTier = Number.isSafeInteger(bait.selectedBaitTier)
             ? bait.selectedBaitTier
@@ -68,6 +69,38 @@ function migrateLegacyDefaults(settings) {
         }
         if (!Object.hasOwn(bait, 'derbyBaitTier')) {
             migrated.features.bait.derbyBaitTier = legacyBaitTier;
+        }
+    }
+
+    if (schedule) {
+        for (const key of [
+            'quietEnabled',
+            'quietGameAutoFishingEnabled',
+            'quietGameAutoFishingAutoRenew',
+        ]) {
+            if (!Object.hasOwn(schedule, key)) {
+                ensureClone();
+                migrated.schedule[key] = DEFAULT_SETTINGS.schedule[key];
+            }
+        }
+    }
+
+    if (fishing) {
+        for (const key of [
+            'shortPauseEnabled',
+            'shortPauseChancePercent',
+            'shortPauseMinMs',
+            'shortPauseMaxMs',
+            'longPauseEnabled',
+            'longPauseChancePercent',
+            'longPauseMinMs',
+            'longPauseMaxMs',
+        ]) {
+            if (!Object.hasOwn(fishing, key)) {
+                ensureClone();
+                migrated.features.fishing[key] =
+                    DEFAULT_SETTINGS.features.fishing[key];
+            }
         }
     }
 

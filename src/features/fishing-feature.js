@@ -4,20 +4,6 @@ import {
     sleep,
 } from '../core/browser-utils.js';
 
-const CAST_DELAY_TIERS = Object.freeze([
-    {
-        threshold: 0.02,
-        minMs: 20_000,
-        maxMs: 40_000,
-        label: '较长停顿',
-    },
-    {
-        threshold: 0.10,
-        minMs: 5_000,
-        maxMs: 10_000,
-        label: '短暂停顿',
-    },
-]);
 export const NO_FISH_REFRESH_MS = 3 * 60_000;
 
 export function selectCastDelay(fishingSettings, {
@@ -26,15 +12,30 @@ export function selectCastDelay(fishingSettings, {
     competitionActive = false,
 } = {}) {
     const roll = chance();
-    const tier = CAST_DELAY_TIERS.find(candidate =>
-        (!competitionActive || candidate.label !== '较长停顿') &&
-        roll < candidate.threshold,
-    );
+    const longChance = fishingSettings.longPauseEnabled
+        ? fishingSettings.longPauseChancePercent / 100
+        : 0;
+    const shortChance = fishingSettings.shortPauseEnabled
+        ? fishingSettings.shortPauseChancePercent / 100
+        : 0;
 
-    if (tier) {
+    if (!competitionActive && longChance > 0 && roll < longChance) {
         return {
-            durationMs: integer(tier.minMs, tier.maxMs),
-            label: tier.label,
+            durationMs: integer(
+                fishingSettings.longPauseMinMs,
+                fishingSettings.longPauseMaxMs,
+            ),
+            label: '较长停顿',
+        };
+    }
+
+    if (shortChance > 0 && roll < longChance + shortChance) {
+        return {
+            durationMs: integer(
+                fishingSettings.shortPauseMinMs,
+                fishingSettings.shortPauseMaxMs,
+            ),
+            label: '短暂停顿',
         };
     }
 

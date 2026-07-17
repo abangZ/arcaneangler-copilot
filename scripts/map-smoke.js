@@ -157,6 +157,7 @@ try {
             const state = {
                 player: {
                     userId: 101,
+                    gold: 123456,
                     level: 27,
                     xp: 450,
                     xpToNext: 900,
@@ -290,6 +291,22 @@ try {
             function renderFishing() {
                 setActive(0);
                 content.innerHTML = '<div>[B' + state.player.currentBiome + '] Fishing</div>';
+                const autoFishing = document.createElement('button');
+                autoFishing.className = 'flex-[15]';
+                autoFishing.title = 'Start Auto-Cast';
+                autoFishing.textContent = '🤖';
+                autoFishing.addEventListener('click', event => {
+                    const active = autoFishing.title === 'Stop Auto-Cast';
+                    state.events.push({
+                        name: active ? 'stop-game-auto' : 'start-game-auto',
+                        trusted: event.isTrusted,
+                    });
+                    autoFishing.title = active
+                        ? 'Start Auto-Cast'
+                        : 'Stop Auto-Cast';
+                    autoFishing.textContent = active ? '🤖' : '🛑';
+                });
+                content.appendChild(autoFishing);
             }
 
             function renderEvents() {
@@ -393,8 +410,27 @@ try {
     assert.equal(initialState.activeTournament.isRegistered, true);
     assert.equal(initialState.activeTournament.biomeId, 12);
     assert.equal(dashboard.level, 27);
+    assert.equal(dashboard.gold, 123456);
     assert.equal(dashboard.xp, 450);
     assert.equal(dashboard.xpToNext, 900);
+    assert.deepEqual(await session.ensureGameAutoFishingActive(), {
+        available: true,
+        active: true,
+        enabled: true,
+    });
+    assert.deepEqual(await session.stopGameAutoFishing(), {
+        available: true,
+        active: false,
+        enabled: true,
+    });
+    assert.deepEqual(
+        (await page.evaluate(() => window.mapSmoke.events))
+            .slice(-2),
+        [
+            { name: 'start-game-auto', trusted: true },
+            { name: 'stop-game-auto', trusted: true },
+        ],
+    );
     assert.deepEqual(dashboard.biome, {
         id: '1',
         name: 'Map 1',
@@ -557,13 +593,20 @@ try {
     assert.equal(result.currentBiome, 12);
     assert.deepEqual(
         result.events.map(event => event.name),
-        ['register-all', 'registration-close', 'page-2', 'biome-12'],
+        [
+            'start-game-auto',
+            'stop-game-auto',
+            'register-all',
+            'registration-close',
+            'page-2',
+            'biome-12',
+        ],
     );
     assert.ok(result.events.every(event => event.trusted));
 
-    console.log(
-        'Map smoke passed: guild tournament priority, derby registration, schedules and biome clicks work.',
-    );
+console.log(
+    'Map smoke passed: dashboard gold, trusted auto-fishing controls, tournaments and biome clicks work.',
+);
 } finally {
     await browser.close();
 }

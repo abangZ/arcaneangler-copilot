@@ -91,11 +91,18 @@ h2 { margin-bottom: 16px; font-size: 15px; }
 .button.ghost { background: transparent; }
 .button.small { min-height: 32px; padding: 5px 10px; }
 
-.kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
 .kpi { min-height: 92px; display: flex; flex-direction: column; justify-content: space-between; padding: 16px; }
 .kpi span { color: var(--muted); font-size: 11px; }
 .kpi strong { font-size: 21px; letter-spacing: -0.02em; }
 .stats-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+[data-tone="income"], [data-tone="positive"] { color: var(--accent); }
+[data-tone="gold"] { color: var(--warning); }
+[data-tone="cost"], [data-tone="negative"] { color: var(--danger); }
+[data-tone="xp"] { color: #7db5ff; }
+[data-tone="fish"] { color: #67e8f9; }
+[data-tone="relic"] { color: #d8b4fe; }
+[data-tone="casts"], [data-tone="neutral"] { color: #aeb8c6; }
 
 .overview-grid, .stats-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
 .detail-card { padding: 18px; }
@@ -139,6 +146,7 @@ h2 { margin-bottom: 16px; font-size: 15px; }
 .progress-track { height: 8px; margin: 23px 0 9px; overflow: hidden; border-radius: 999px; background: #090e16; }
 .progress-track span { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent-strong), #69a7ff); transition: width 240ms ease-out; }
 .progress-meta { display: flex; justify-content: space-between; gap: 16px; color: var(--muted); font-size: 10px; }
+.level-rate { margin-top: 7px; color: #7db5ff; font-size: 10px; text-align: right; }
 .map-status-list { margin-top: 28px; padding-top: 15px; border-top: 1px solid var(--border); }
 .derby-summary { margin-top: 18px; padding: 13px 14px; border: 1px solid rgba(148, 163, 184, 0.1); border-radius: 10px; background: var(--panel-soft); }
 .world-boss-summary { border-color: rgba(167, 139, 250, 0.22); background: rgba(124, 58, 237, 0.06); }

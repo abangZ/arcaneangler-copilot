@@ -33,6 +33,9 @@ function describeMapSettings(mapSettings) {
 }
 
 function describeRuntime(settings, profile) {
+    const quietDescription = settings.schedule.quietEnabled
+        ? `${formatHour(settings.schedule.quietStartHour)}-${formatHour(settings.schedule.quietEndHour)}`
+        : '关闭';
     const details = [
         `无头模式=${enabledLabel(settings.browser.headless)}`,
         `自动钓鱼=${enabledLabel(settings.features.fishing.enabled)}`,
@@ -44,8 +47,17 @@ function describeRuntime(settings, profile) {
         `Chromium=${profile.browserVersion}`,
         `运行=${settings.schedule.activeMinMinutes}-${settings.schedule.activeMaxMinutes} 分钟`,
         `休息=${settings.schedule.restMinMinutes}-${settings.schedule.restMaxMinutes} 分钟`,
-        `夜间停机=${formatHour(settings.schedule.quietStartHour)}-${formatHour(settings.schedule.quietEndHour)}`,
+        `夜间休息=${quietDescription}`,
     ];
+
+    if (settings.schedule.quietGameAutoFishingEnabled) {
+        details.push(
+            `夜间游戏自动钓鱼=开启`,
+            `自动续期=${enabledLabel(
+                settings.schedule.quietGameAutoFishingAutoRenew,
+            )}`,
+        );
+    }
 
     if (settings.features.bait.enabled) {
         details.push(
@@ -174,6 +186,7 @@ export class AutomationWorker {
         const baitChanged = context?.baitId &&
             context.baitId !== previousBait?.id;
         const snapshot = {
+            gold: finiteNumber(result?.newGold, previous.gold),
             level: finiteNumber(result?.newLevel, previous.level),
             xp: finiteNumber(result?.newXP, previous.xp),
             xpToNext: finiteNumber(result?.xpToNext, previous.xpToNext),
@@ -441,6 +454,8 @@ export class AutomationWorker {
     async sellGears(gearIds) {
         this.assertGearManagementAvailable();
         const snapshot = await this.session.sellGearsThroughApi(gearIds);
+
+        await this.refreshDashboardSnapshot({ force: true });
 
         await this.reporter.log({
             level: 'running',

@@ -165,6 +165,7 @@ function createFakeWorker() {
             browserSuspended: false,
             scheduleMode: 'active',
             dashboard: {
+                gold: 123_456,
                 level: 27,
                 xp: 450,
                 xpToNext: 900,
@@ -465,6 +466,16 @@ try {
         assert.match(pageHtml, /id="bait-guild-tournament-tier"/);
         assert.match(pageHtml, /id="bait-derby-tier"/);
         assert.match(pageHtml, /id="world-boss-enabled"/);
+        assert.match(pageHtml, /id="current-gold"/);
+        assert.match(pageHtml, /id="level-rate"/);
+        assert.match(pageHtml, /id="short-pause-enabled"/);
+        assert.match(pageHtml, /id="long-pause-enabled"/);
+        assert.match(pageHtml, /id="quiet-enabled"/);
+        assert.match(pageHtml, /id="quiet-game-auto-fishing-enabled"/);
+        assert.match(
+            pageHtml,
+            /id="quiet-game-auto-fishing-auto-renew"/,
+        );
         assert.match(pageHtml, /id="current-bait-name"/);
         assert.match(pageHtml, /id="current-bait-biome"/);
         assert.match(pageHtml, /id="current-bait-tier"/);
@@ -493,6 +504,9 @@ try {
         assert.match(appSource, /const LOG_LIMIT = 200/);
         assert.match(appSource, /const RARITY_DISPLAY/);
         assert.match(appSource, /function estimateLevelUp/);
+        assert.match(appSource, /experienceRate\?\.xpPerHour/);
+        assert.match(appSource, /experienceRate\.sampleCount/);
+        assert.match(appSource, /levelsPerHour/);
         assert.match(appSource, /const DERBY_TYPE_LABELS/);
         assert.match(appSource, /const WORLD_BOSS_STAT_LABELS/);
         assert.match(appSource, /function renderGear/);
