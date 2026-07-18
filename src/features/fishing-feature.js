@@ -223,7 +223,7 @@ export class FishingFeature {
                 await isVisible(castButton) &&
                 await castButton.isEnabled()
             ) {
-                await this.session.trustedClick(castButton);
+                await this.session.trustedClickRandomPosition(castButton);
                 this.lastProgressAt = this.now();
                 await this.reporter.incrementCast();
                 await waitForCastButtonToLeaveReadyState(castButton);

@@ -1166,6 +1166,22 @@ export class ArcaneAnglerPage {
         await locator.click(options);
     }
 
+    async trustedClickRandomPosition(locator, { random = Math.random } = {}) {
+        this.assertAutomationAllowed();
+        const box = await locator.boundingBox();
+
+        if (!box || box.width <= 0 || box.height <= 0) {
+            throw new Error('目标控件没有可点击区域。');
+        }
+
+        const position = {
+            x: box.width * (0.2 + random() * 0.6),
+            y: box.height * (0.2 + random() * 0.6),
+        };
+
+        await this.trustedClick(locator, { position });
+    }
+
     async captureScreenshot(reason) {
         if (this.page.isClosed()) {
             return null;

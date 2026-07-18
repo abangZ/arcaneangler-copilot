@@ -17,6 +17,7 @@ import {
     waitForCastButtonToLeaveReadyState,
     waitForCastDelay,
 } from '../src/features/fishing-feature.js';
+import { ArcaneAnglerPage } from '../src/site/arcane-angler-page.js';
 
 assert.equal(
     DEFAULT_SETTINGS.features.fishing.clickDelayMinMs,
@@ -26,6 +27,30 @@ assert.equal(
     DEFAULT_SETTINGS.features.fishing.clickDelayMaxMs,
     2_000,
 );
+
+const clickPositions = [];
+const clickSession = new ArcaneAnglerPage({
+    page: { on: () => {} },
+    config: {},
+    reporter: {},
+    shouldStop: () => false,
+});
+const clickTarget = {
+    boundingBox: async () => ({ x: 100, y: 200, width: 200, height: 80 }),
+    click: async options => clickPositions.push(options.position),
+};
+const randomValues = [0, 0, 1, 1];
+
+await clickSession.trustedClickRandomPosition(clickTarget, {
+    random: () => randomValues.shift(),
+});
+await clickSession.trustedClickRandomPosition(clickTarget, {
+    random: () => randomValues.shift(),
+});
+assert.deepEqual(clickPositions, [
+    { x: 40, y: 16 },
+    { x: 160, y: 64 },
+]);
 
 const settings = structuredClone(DEFAULT_SETTINGS.features.fishing);
 const counts = {
