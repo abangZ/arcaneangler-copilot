@@ -383,7 +383,10 @@ let quietAutoSchedule = {
     quietGameAutoFishingEnabled: true,
 };
 let gameAutoFishingActive = false;
+let gameAutoFishingStaminaExhausted = false;
 const quietAutoEvents = [];
+const quietAutoStartDecisions = [];
+const quietAutoWaitStates = [];
 const quietAutoEngine = new AutomationEngine({
     settings: {
         get: () => ({
@@ -401,10 +404,32 @@ const quietAutoEngine = new AutomationEngine({
         bootstrap: async () => quietAutoEvents.push('bootstrap'),
         getCompetitionSchedule: () => [],
         getActivePunishmentExpiresAt: () => null,
-        ensureGameAutoFishingActive: async () => {
+        ensureGameAutoFishingActive: async ({
+            startIfInactive = true,
+        } = {}) => {
             quietAutoEvents.push('ensure-game-auto');
-            gameAutoFishingActive = true;
-            return { available: true, active: true, enabled: true };
+            quietAutoStartDecisions.push(startIfInactive);
+
+            if (gameAutoFishingStaminaExhausted) {
+                gameAutoFishingStaminaExhausted = false;
+                return {
+                    available: true,
+                    active: false,
+                    enabled: true,
+                    staminaExhausted: true,
+                };
+            }
+
+            if (startIfInactive) {
+                gameAutoFishingActive = true;
+            }
+
+            return {
+                available: true,
+                active: gameAutoFishingActive,
+                enabled: true,
+                staminaExhausted: false,
+            };
         },
         getGameAutoFishingState: async () => {
             quietAutoEvents.push('check-game-auto');
@@ -432,6 +457,7 @@ quietAutoEngine.scheduler = new OperationScheduler(quietAutoSchedule, {
     random: min => min,
 });
 quietAutoEngine.waitForQuietGameAutoFishing = async (_gate, state) => {
+    quietAutoWaitStates.push(state);
     quietAutoEvents.push(`wait-game-auto:${state.active}`);
 };
 quietAutoEngine.register({
@@ -457,20 +483,18 @@ assert.equal(quietAutoEngine.getState().browserSuspended, false);
 
 await quietAutoEngine.runCycle();
 assert.deepEqual(quietAutoEvents.slice(-2), [
-    'check-game-auto',
+    'ensure-game-auto',
     'wait-game-auto:true',
 ]);
+assert.equal(quietAutoStartDecisions.at(-1), false);
 
 gameAutoFishingActive = false;
 await quietAutoEngine.runCycle();
 assert.deepEqual(quietAutoEvents.slice(-2), [
-    'check-game-auto',
+    'ensure-game-auto',
     'wait-game-auto:false',
 ]);
-assert.equal(
-    quietAutoEvents.filter(event => event === 'ensure-game-auto').length,
-    1,
-);
+assert.equal(quietAutoStartDecisions.at(-1), false);
 
 quietAutoSchedule = {
     ...quietAutoSchedule,
@@ -482,6 +506,23 @@ assert.deepEqual(quietAutoEvents.slice(-3), [
     'ensure-game-auto',
     'wait-game-auto:true',
 ]);
+
+gameAutoFishingActive = false;
+gameAutoFishingStaminaExhausted = true;
+await quietAutoEngine.runCycle();
+assert.equal(quietAutoEngine.getState().quietGameAutoFishing.active, false);
+assert.ok(quietAutoEngine.getState().quietGameAutoFishing.retryAt);
+assert.ok(quietAutoWaitStates.at(-1).staminaRetryAt);
+assert.equal(quietAutoStartDecisions.at(-1), true);
+
+await quietAutoEngine.runCycle();
+assert.equal(quietAutoStartDecisions.at(-1), false);
+assert.equal(gameAutoFishingActive, false);
+
+quietAutoEngine.quietGameAutoFishingRetryAt = Date.now() - 1;
+await quietAutoEngine.runCycle();
+assert.equal(quietAutoStartDecisions.at(-1), true);
+assert.equal(gameAutoFishingActive, true);
 
 quietAutoNow = new Date(2026, 6, 18, 9, 0, 0, 0);
 await quietAutoEngine.runCycle();

@@ -56,9 +56,10 @@ try {
             equippedBaitId: 'bait_1_default',
             events: [],
             purchaseClicks: 0,
+            consumeBeforePurchase: true,
             trustedClicks: [],
             stocks: {
-                bait_1_low: 0,
+                bait_1_low: 98,
                 bait_1_high: 0,
                 bait_2_low: 0,
                 bait_2_high: 0,
@@ -185,6 +186,15 @@ try {
                         method: 'POST',
                     });
                     const baitId = button.dataset.buy;
+
+                    if (
+                        baitId === 'bait_1_low' &&
+                        window.baitSmoke.consumeBeforePurchase
+                    ) {
+                        window.baitSmoke.stocks[baitId] -= 1;
+                        window.baitSmoke.consumeBeforePurchase = false;
+                    }
+
                     window.baitSmoke.stocks[baitId] += Number(input.value);
                     renderBaits();
                 });
@@ -326,7 +336,7 @@ try {
         stock: window.baitSmoke.stocks.bait_1_low,
     }));
 
-    assert.equal(result.stock, 100);
+    assert.equal(result.stock, 197);
     assert.equal(result.purchaseClicks, 2);
     assert.equal(result.equippedBaitId, 'bait_1_low');
     assert.equal(result.events.at(-1), 'equip:bait_1_low');
@@ -361,7 +371,7 @@ try {
         ),
         equipmentClickCount,
     );
-    assert.match(reporter.get().message, /最近响应显示当前库存 100/);
+    assert.match(reporter.get().message, /最近响应显示当前库存 197/);
 
     await page.evaluate(() => window.baitSmoke.switchBiome(2));
     feature.reset();

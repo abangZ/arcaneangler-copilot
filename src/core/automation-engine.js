@@ -7,6 +7,7 @@ import {
 import { SITE_MAINTENANCE_CODE } from './site-availability.js';
 
 const MAINTENANCE_RETRY_MS = 60_000;
+const QUIET_AUTO_FISHING_STAMINA_RETRY_MS = 60_000;
 
 export class AutomationEngine {
     constructor({
@@ -35,6 +36,7 @@ export class AutomationEngine {
         this.quietOperationInProgress = false;
         this.quietGameAutoFishingStarted = false;
         this.quietGameAutoFishingActive = false;
+        this.quietGameAutoFishingRetryAt = 0;
     }
 
     register(feature) {
@@ -63,6 +65,9 @@ export class AutomationEngine {
             quietGameAutoFishing: {
                 started: this.quietGameAutoFishingStarted,
                 active: this.quietGameAutoFishingActive,
+                retryAt: this.quietGameAutoFishingRetryAt > Date.now()
+                    ? new Date(this.quietGameAutoFishingRetryAt).toISOString()
+                    : null,
             },
         };
     }
@@ -222,14 +227,22 @@ export class AutomationEngine {
     async waitForQuietGameAutoFishing(gate, state, { record = false } = {}) {
         const message = state.active
             ? `夜间休息期间由游戏内自动钓鱼接管${state.autoRenew ? '，会在每轮结束后自动续期' : '，本轮结束后不会续期'}；常规脚本将于 ${this.formatLocalTime(gate.resumeAt)} 恢复。`
-            : `夜间游戏自动钓鱼暂未启动，可能仍在冷却或体力不足；常规脚本将于 ${this.formatLocalTime(gate.resumeAt)} 恢复。`;
+            : state.staminaRetryAt
+                ? `游戏内自动钓鱼已耗尽体力，将于 ${this.formatLocalTime(new Date(state.staminaRetryAt))} 后尝试续期；常规脚本将于 ${this.formatLocalTime(gate.resumeAt)} 恢复。`
+                : state.staminaExhausted
+                    ? `本轮游戏内自动钓鱼已耗尽体力，自动续期未开启；常规脚本将于 ${this.formatLocalTime(gate.resumeAt)} 恢复。`
+                    : `夜间游戏自动钓鱼暂未启动，可能仍在冷却或体力不足；常规脚本将于 ${this.formatLocalTime(gate.resumeAt)} 恢复。`;
 
         await this.reporter.update({
             level: 'waiting',
             phase: 'schedule',
             target: state.active
                 ? '游戏内自动钓鱼运行中'
-                : '等待游戏内自动钓鱼可用',
+                : state.staminaRetryAt
+                    ? '等待体力恢复后续期'
+                    : state.staminaExhausted
+                        ? '游戏内自动钓鱼已结束'
+                        : '等待游戏内自动钓鱼可用',
             activeFeature: '夜间自动钓鱼',
             message,
         }, { record });
@@ -242,9 +255,14 @@ export class AutomationEngine {
         if (gate.transitioned) {
             this.quietGameAutoFishingStarted = false;
             this.quietGameAutoFishingActive = false;
+            this.quietGameAutoFishingRetryAt = 0;
             this.resetFeatures();
         }
 
+        const now = Date.now();
+        const autoRenew = settings.schedule.quietGameAutoFishingAutoRenew;
+        const retryPending = autoRenew &&
+            this.quietGameAutoFishingRetryAt > now;
         const state = await this.withQuietOperation(async () => {
             if (this.browserSuspended) {
                 await this.resumeBrowserForQuietGameAutoFishing();
@@ -252,24 +270,32 @@ export class AutomationEngine {
                 await this.ensureStarted();
             }
 
-            if (
-                !this.quietGameAutoFishingStarted ||
-                settings.schedule.quietGameAutoFishingAutoRenew
-            ) {
-                return this.session.ensureGameAutoFishingActive();
-            }
-
-            return this.session.getGameAutoFishingState();
+            return this.session.ensureGameAutoFishingActive({
+                startIfInactive:
+                    !this.quietGameAutoFishingStarted ||
+                    (autoRenew && !retryPending),
+            });
         });
 
         this.quietGameAutoFishingActive = state.active === true;
         if (this.quietGameAutoFishingActive) {
             this.quietGameAutoFishingStarted = true;
+            this.quietGameAutoFishingRetryAt = 0;
+        } else if (state.staminaExhausted && autoRenew) {
+            this.quietGameAutoFishingRetryAt =
+                Date.now() + QUIET_AUTO_FISHING_STAMINA_RETRY_MS;
         }
+
+        const staminaRetryAt = autoRenew &&
+            this.quietGameAutoFishingRetryAt > Date.now()
+            ? this.quietGameAutoFishingRetryAt
+            : null;
 
         await this.waitForQuietGameAutoFishing(gate, {
             active: this.quietGameAutoFishingActive,
-            autoRenew: settings.schedule.quietGameAutoFishingAutoRenew,
+            autoRenew,
+            staminaRetryAt,
+            staminaExhausted: state.staminaExhausted === true,
         }, {
             record: gate.transitioned ||
                 previousActive !== this.quietGameAutoFishingActive,
@@ -280,7 +306,8 @@ export class AutomationEngine {
         if (
             !force &&
             !this.quietGameAutoFishingStarted &&
-            !this.quietGameAutoFishingActive
+            !this.quietGameAutoFishingActive &&
+            this.quietGameAutoFishingRetryAt === 0
         ) {
             return;
         }
@@ -300,6 +327,7 @@ export class AutomationEngine {
 
         this.quietGameAutoFishingStarted = false;
         this.quietGameAutoFishingActive = false;
+        this.quietGameAutoFishingRetryAt = 0;
         this.resetFeatures();
     }
 

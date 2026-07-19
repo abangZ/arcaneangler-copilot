@@ -1628,6 +1628,10 @@ export class ArcaneAnglerPage {
             return true;
         }
 
+        if (await this.dismissGameAutoFishingCompletionModal()) {
+            return true;
+        }
+
         if (await this.dismissGameAutoFishingSummary()) {
             return true;
         }
@@ -1725,6 +1729,36 @@ export class ArcaneAnglerPage {
         });
         await this.reporter.update({
             message: '已关闭抛竿失败弹窗，继续自动钓鱼。',
+        }, { record: false });
+        return true;
+    }
+
+    async dismissGameAutoFishingCompletionModal() {
+        const modal = await firstVisible(
+            this.page.locator('div.fixed.inset-0.z-50').filter({
+                hasText: /Auto-Cast complete:\s*All stamina consumed!?/i,
+            }),
+        );
+
+        if (!modal) {
+            return false;
+        }
+
+        const confirmButton = await firstVisible(modal.getByRole('button', {
+            name: /^(OK|确定)$/i,
+        }));
+
+        if (!confirmButton) {
+            throw new Error('游戏自动钓鱼完成弹窗中找不到确认按钮。');
+        }
+
+        await this.trustedClick(confirmButton, { timeout: 5_000 });
+        await modal.waitFor({
+            state: 'hidden',
+            timeout: this.config.navigationTimeoutMs,
+        });
+        await this.reporter.update({
+            message: '游戏内自动钓鱼已耗尽体力，等待恢复后再续期。',
         }, { record: false });
         return true;
     }
@@ -1885,9 +1919,14 @@ export class ArcaneAnglerPage {
         };
     }
 
-    async ensureGameAutoFishingActive() {
+    async ensureGameAutoFishingActive({ startIfInactive = true } = {}) {
         await this.openFishingPage();
-        await this.dismissBlockingOverlays();
+        const staminaExhausted =
+            await this.dismissGameAutoFishingCompletionModal();
+
+        if (!staminaExhausted) {
+            await this.dismissBlockingOverlays();
+        }
 
         let state = null;
 
@@ -1900,8 +1939,15 @@ export class ArcaneAnglerPage {
             shouldStop: this.shouldStop,
         });
 
-        if (state.active || !state.enabled) {
-            return state;
+        if (
+            state.active ||
+            !state.enabled ||
+            !startIfInactive ||
+            staminaExhausted
+        ) {
+            return staminaExhausted
+                ? { ...state, staminaExhausted: true }
+                : state;
         }
 
         const button = await this.getGameAutoFishingButton();
@@ -2657,10 +2703,10 @@ export class ArcaneAnglerPage {
 
         await waitUntil(async () => {
             current = await this.inspectBait(baitId, catalog);
-            return current.stock >= previousStock + quantity;
+            return current.stock > previousStock;
         }, {
             timeoutMs: this.config.navigationTimeoutMs,
-            message: '购买后鱼饵库存没有按预期增加',
+            message: '购买后鱼饵库存没有增加',
             shouldStop: this.shouldStop,
         });
 

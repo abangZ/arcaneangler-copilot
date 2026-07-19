@@ -336,6 +336,28 @@ try {
                     );
                     document.body.appendChild(overlay);
                 };
+                const showAutoCastCompletion = () => {
+                    const overlay = document.createElement('div');
+
+                    overlay.className = 'fixed inset-0 z-50';
+                    overlay.innerHTML = [
+                        '<div>',
+                        '<p>Auto-Cast complete: All stamina consumed!</p>',
+                        '<button>OK</button>',
+                        '</div>',
+                    ].join('');
+                    overlay.querySelector('button').addEventListener(
+                        'click',
+                        event => {
+                            state.events.push({
+                                name: 'close-auto-completion',
+                                trusted: event.isTrusted,
+                            });
+                            overlay.remove();
+                        },
+                    );
+                    document.body.appendChild(overlay);
+                };
                 const autoFishing = document.createElement('button');
                 autoFishing.className = 'flex-[15]';
                 autoFishing.title = 'Start Auto-Cast';
@@ -357,6 +379,8 @@ try {
                 content.appendChild(autoFishing);
                 window.mapSmoke.showAutoCastSummary = showAutoCastSummary;
                 window.mapSmoke.showCastFailure = showCastFailure;
+                window.mapSmoke.showAutoCastCompletion =
+                    showAutoCastCompletion;
             }
 
             function renderEvents() {
@@ -487,6 +511,17 @@ try {
     assert.deepEqual(
         (await page.evaluate(() => window.mapSmoke.events)).at(-1),
         { name: 'close-cast-failure', trusted: true },
+    );
+    await page.evaluate(() => window.mapSmoke.showAutoCastCompletion());
+    assert.deepEqual(await session.ensureGameAutoFishingActive(), {
+        available: true,
+        active: false,
+        enabled: true,
+        staminaExhausted: true,
+    });
+    assert.deepEqual(
+        (await page.evaluate(() => window.mapSmoke.events)).at(-1),
+        { name: 'close-auto-completion', trusted: true },
     );
     await page.evaluate(() => window.mapSmoke.showAutoCastSummary());
     assert.deepEqual(await session.stopGameAutoFishing(), {
@@ -671,6 +706,7 @@ try {
             'stop-game-auto',
             'close-auto-summary',
             'close-cast-failure',
+            'close-auto-completion',
             'close-auto-summary',
             'close-auto-summary',
             'register-all',
