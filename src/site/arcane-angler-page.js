@@ -1465,16 +1465,13 @@ export class ArcaneAnglerPage {
         const loginResponse = await loginResponsePromise;
 
         if (!loginResponse.ok()) {
-            let errorMessage = `HTTP ${loginResponse.status()}`;
+            const statusText = String(loginResponse.statusText() || '').trim();
 
-            try {
-                const body = await loginResponse.json();
-                errorMessage = body.error || errorMessage;
-            } catch {
-                // 不输出未知响应正文，避免日志意外包含敏感数据。
-            }
-
-            throw new Error(`登录失败：${errorMessage}`);
+            throw new Error(
+                `登录失败：HTTP ${loginResponse.status()}${
+                    statusText ? ` ${statusText}` : ''
+                }`,
+            );
         }
 
         await waitUntil(async () =>
@@ -1627,6 +1624,10 @@ export class ArcaneAnglerPage {
             return false;
         }
 
+        if (await this.dismissCastFailureModal()) {
+            return true;
+        }
+
         if (await this.dismissGameAutoFishingSummary()) {
             return true;
         }
@@ -1696,6 +1697,36 @@ export class ArcaneAnglerPage {
         }
 
         return false;
+    }
+
+    async dismissCastFailureModal() {
+        const modal = await firstVisible(
+            this.page.locator('div.fixed.inset-0.z-50').filter({
+                hasText: /Failed to cast line\.\s*Please try again\./i,
+            }),
+        );
+
+        if (!modal) {
+            return false;
+        }
+
+        const confirmButton = await firstVisible(modal.getByRole('button', {
+            name: /^(OK|确定)$/i,
+        }));
+
+        if (!confirmButton) {
+            throw new Error('抛竿失败弹窗中找不到确认按钮。');
+        }
+
+        await this.trustedClick(confirmButton, { timeout: 5_000 });
+        await modal.waitFor({
+            state: 'hidden',
+            timeout: this.config.navigationTimeoutMs,
+        });
+        await this.reporter.update({
+            message: '已关闭抛竿失败弹窗，继续自动钓鱼。',
+        }, { record: false });
+        return true;
     }
 
     async dismissGameAutoFishingSummary({ timeoutMs = 0 } = {}) {

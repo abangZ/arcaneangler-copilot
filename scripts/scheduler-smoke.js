@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import { AutomationEngine } from '../src/core/automation-engine.js';
+import { AutomationWorker } from '../src/core/automation-worker.js';
 import {
     OPERATION_STATES,
     OperationScheduler,
@@ -490,6 +491,25 @@ assert.ok(
 );
 assert.equal(gameAutoFishingActive, false);
 assert.equal(quietAutoEngine.getState().quietGameAutoFishing.active, false);
+
+const stopEvents = [];
+let releaseRunPromise;
+const stoppingWorker = Object.create(AutomationWorker.prototype);
+
+stoppingWorker.stopRequested = false;
+stoppingWorker.engine = {
+    stop: async () => stopEvents.push('engine-stop'),
+};
+stoppingWorker.runPromise = new Promise(resolve => {
+    releaseRunPromise = resolve;
+});
+stoppingWorker.closeBrowser = async () => {
+    stopEvents.push('browser-close');
+    releaseRunPromise();
+};
+
+await stoppingWorker.stop('smoke-stop');
+assert.deepEqual(stopEvents, ['engine-stop', 'browser-close']);
 
 console.log(
     'Scheduler smoke passed: quiet switches, game auto-fishing handoff, competition priority and delayed resume work.',

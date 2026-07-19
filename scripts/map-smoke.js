@@ -314,6 +314,28 @@ try {
                     );
                     document.body.appendChild(overlay);
                 };
+                const showCastFailure = () => {
+                    const overlay = document.createElement('div');
+
+                    overlay.className = 'fixed inset-0 z-50';
+                    overlay.innerHTML = [
+                        '<div>',
+                        '<p>Failed to cast line. Please try again.</p>',
+                        '<button>OK</button>',
+                        '</div>',
+                    ].join('');
+                    overlay.querySelector('button').addEventListener(
+                        'click',
+                        event => {
+                            state.events.push({
+                                name: 'close-cast-failure',
+                                trusted: event.isTrusted,
+                            });
+                            overlay.remove();
+                        },
+                    );
+                    document.body.appendChild(overlay);
+                };
                 const autoFishing = document.createElement('button');
                 autoFishing.className = 'flex-[15]';
                 autoFishing.title = 'Start Auto-Cast';
@@ -334,6 +356,7 @@ try {
                 });
                 content.appendChild(autoFishing);
                 window.mapSmoke.showAutoCastSummary = showAutoCastSummary;
+                window.mapSmoke.showCastFailure = showCastFailure;
             }
 
             function renderEvents() {
@@ -458,6 +481,12 @@ try {
             { name: 'stop-game-auto', trusted: true },
             { name: 'close-auto-summary', trusted: true },
         ],
+    );
+    await page.evaluate(() => window.mapSmoke.showCastFailure());
+    assert.equal(await session.dismissBlockingOverlays(), true);
+    assert.deepEqual(
+        (await page.evaluate(() => window.mapSmoke.events)).at(-1),
+        { name: 'close-cast-failure', trusted: true },
     );
     await page.evaluate(() => window.mapSmoke.showAutoCastSummary());
     assert.deepEqual(await session.stopGameAutoFishing(), {
@@ -641,6 +670,7 @@ try {
             'start-game-auto',
             'stop-game-auto',
             'close-auto-summary',
+            'close-cast-failure',
             'close-auto-summary',
             'close-auto-summary',
             'register-all',

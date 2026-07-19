@@ -52,6 +52,47 @@ assert.deepEqual(clickPositions, [
     { x: 160, y: 64 },
 ]);
 
+let loginResponseBodyRead = false;
+const usernameInput = { fill: async () => {} };
+const submitButton = { click: async () => {} };
+const passwordInput = {
+    fill: async () => {},
+    locator: () => ({
+        locator: selector => selector === 'button[type="submit"]'
+            ? submitButton
+            : { first: () => usernameInput },
+    }),
+};
+const failedLoginSession = new ArcaneAnglerPage({
+    page: {
+        on: () => {},
+        waitForResponse: async () => ({
+            ok: () => false,
+            status: () => 503,
+            statusText: () => 'Service Unavailable',
+            json: async () => {
+                loginResponseBodyRead = true;
+                return { error: 'temporarily unavailable' };
+            },
+        }),
+    },
+    config: {
+        username: 'smoke-user',
+        password: 'smoke-password',
+        navigationTimeoutMs: 100,
+    },
+    reporter: { update: async () => {} },
+    shouldStop: () => false,
+    canAutomate: () => true,
+});
+
+failedLoginSession.openLoginForm = async () => passwordInput;
+await assert.rejects(
+    () => failedLoginSession.login(),
+    /登录失败：HTTP 503 Service Unavailable/,
+);
+assert.equal(loginResponseBodyRead, false);
+
 const settings = structuredClone(DEFAULT_SETTINGS.features.fishing);
 const counts = {
     '较长停顿': 0,

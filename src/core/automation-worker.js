@@ -477,7 +477,7 @@ export class AutomationWorker {
 
         this.stopRequested = true;
         await this.engine?.stop(signal);
-        await this.runPromise?.catch(() => {});
         await this.closeBrowser();
+        await this.runPromise?.catch(() => {});
     }
 }
