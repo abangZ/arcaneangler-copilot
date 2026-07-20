@@ -19,7 +19,7 @@ Arcane Angler Copilot 是一个适合在 Linux 服务器长期运行的 Arcane A
 - 自动切地图和公会锦标赛优先默认开启；支持固定地图，或按公会锦标赛、个人 Derby、天气经验和 Biome 等级自动选择地图。
 - 自动参与世界 Boss 默认开启；发现活动后进入 Anomalies 页面，持续选择 Boss 的主要弱点攻击，活动结束后恢复钓鱼。
 - 可用 `0..4` 档位分别设置普通挂机、公会锦标赛和个人 Derby 使用的鱼饵，并在库存不足时通过页面购买和装备。
-- 检测到 Human Verification 时，优先通过真实鼠标点击和滑块拖动处理；模拟手操失败时复用当前题目，通过页面验证 API 兜底。
+- 支持旧版 SVG 和新版图片拼图 Human Verification；优先通过真实鼠标点击和滑块拖动处理，模拟手操失败时复用当前题目，通过页面验证 API 兜底。基础算术 Staff Question 会自动回答，无法可靠解析的问题转交人工处理。
 - 日志同时输出到 stdout/stderr，并保留最近 7 个每日 JSONL 日志文件供 Web 页面查看。
 
 自动抛竿、世界 Boss 攻击、鱼饵购买/装备、Derby 报名和地图切换仍通过 Playwright 页面控件完成。装备管理使用 Playwright 已登录页面提供的 `ApiService` 读取和提交 gear 请求；所有命令仍经过 Web 鉴权、CSRF 校验和 `WorkerController` 串行队列，不会把游戏凭据暴露给控制台。
@@ -244,7 +244,7 @@ pnpm run smoke
 ## 注意事项
 
 - 普通页面点击由 Playwright `Locator.click()` 驱动，产生 `isTrusted=true` 的浏览器可信事件。
-- 自动验证只读取页面已经渲染的题面，并通过 Playwright 产生真实鼠标点击和拖动事件。
+- 自动验证只处理页面自行产生的题目；滑块优先通过 Playwright 产生真实鼠标点击和拖动事件，Staff Question 仅回答能够可靠解析的基础算术题。
 - 网站更新页面结构后，自动化功能可能需要同步更新。
 - 长期运行会持续消耗游戏内体力、鱼饵等资源。
 

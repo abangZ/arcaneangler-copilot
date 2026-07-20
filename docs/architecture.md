@@ -149,7 +149,7 @@ stopped -> starting -> running -> pausing -> paused
 
 ## 页面与 Feature 边界
 
-`ArcaneAnglerPage` 继续封装所有 DOM Locator 和页面响应细节。普通点击必须使用 Playwright `Locator.click()`，禁止在页面上下文调用 `HTMLElement.click()`。Human Verification 优先使用真实鼠标移动、点击和拖动；模拟手操失败且弹窗仍存在时，复用已观察到的 challenge 调用页面 `ApiService` 验证，成功后刷新页面恢复 React 状态。
+`ArcaneAnglerPage` 继续封装所有 DOM Locator 和页面响应细节。普通点击必须使用 Playwright `Locator.click()`，禁止在页面上下文调用 `HTMLElement.click()`。Human Verification 同时兼容旧版 SVG 和新版 `bgImage + pieceSvg` 拼图，优先使用真实鼠标移动、点击和拖动；模拟手操失败且弹窗仍存在时，复用已观察到的 challenge 调用页面 `ApiService` 验证，成功后刷新页面恢复 React 状态。页面自行轮询产生的 Staff Question 响应由 adapter 缓存，只有能够可靠解析的基础算术题才通过页面 `answerToastQuestion()` 提交；开放问题保留弹窗并等待人工处理。
 
 页面 adapter 监听页面自己产生的 `POST /api/game/cast` 成功响应，用页面 `BIOMES` / `BAITS` catalog 补齐地图名、鱼饵名和价格后交给 `StatsStore`，同时缓存响应中的 `equippedBait` / `baitQuantity` 供 `BaitFeature` 判断是否需要打开 Equipment。响应带有 `isPunished` 和有效的 `punishmentExpiresAt` 时，Engine 会暂停所有页面操作直至处罚结束，避免继续产生零收益抛竿和鱼饵成本。该监听不会发起额外抛竿请求，也不会改变页面对响应的消费。
 
@@ -211,7 +211,7 @@ SIGINT / SIGTERM 的顺序是：
 - `pnpm run smoke:stats`：`/cast` 响应解析、鱼饵余量缓存、每日/地图/鱼饵聚合、最后鱼获、v1 迁移和持久化。
 - `pnpm run smoke:map`：公会锦标赛优先级、Derby 报名及成功弹窗关闭、活动时间、地图算法、角色/金币/地图快照、游戏 Auto-Cast 启停和可信点击。
 - `pnpm run smoke:bait`：跨地图档位、购买、装备、库存缓存和 Equipment 跳过。
-- `pnpm run smoke:verification`：真实鼠标验证事件、验证完成竞态识别和页面 API 兜底。
+- `pnpm run smoke:verification`：真实鼠标验证事件、验证完成竞态识别、新版图片拼图、Staff Question 和页面 API 兜底。
 - Chromium smoke 在当前环境中串行执行，不并行启动 persistent browser。
 
 `.env`、`.data/`、`artifacts/` 和 `node_modules/` 必须保持在 Git 忽略范围内。

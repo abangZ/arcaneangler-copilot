@@ -257,7 +257,7 @@ export class BaitFeature {
             if (
                 openedEquipment &&
                 await this.session.isGameShellVisible() &&
-                !(await this.session.getVerificationOverlay())
+                !(await this.session.hasActiveVerification())
             ) {
                 await this.session.openFishingPage();
             }

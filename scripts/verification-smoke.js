@@ -5,6 +5,10 @@ import { chromium } from 'playwright';
 
 import { createBrowserProfile } from '../src/core/browser-profile.js';
 import { StatusReporter } from '../src/core/status-reporter.js';
+import {
+    findCaptchaGapFromPixels,
+    solveStaffQuestion,
+} from '../src/core/verification-challenges.js';
 import { VerificationFeature } from '../src/features/verification-feature.js';
 import { ArcaneAnglerPage } from '../src/site/arcane-angler-page.js';
 
@@ -13,14 +17,14 @@ const settings = {
         verification: { enabled: true },
     },
 };
-let overlayChecks = 0;
+let verificationChecks = 0;
 let completedApiCalls = 0;
 const completedReports = [];
 const completedFeature = new VerificationFeature({
     session: {
-        async getVerificationOverlay() {
-            overlayChecks += 1;
-            return overlayChecks === 1 ? {} : null;
+        async getActiveVerification() {
+            verificationChecks += 1;
+            return verificationChecks === 1 ? { type: 'captcha' } : null;
         },
         async solveHumanVerification() {
             throw new Error('提交后旧滑块已失效');
@@ -43,8 +47,8 @@ assert.match(completedReports.at(-1).message, /确认验证已完成/);
 const fallbackActions = [];
 const fallbackFeature = new VerificationFeature({
     session: {
-        async getVerificationOverlay() {
-            return {};
+        async getActiveVerification() {
+            return { type: 'captcha' };
         },
         async solveHumanVerification() {
             fallbackActions.push('mouse');
@@ -70,6 +74,81 @@ const fallbackFeature = new VerificationFeature({
 
 assert.equal(await fallbackFeature.tick(settings), true);
 assert.deepEqual(fallbackActions, ['mouse', 'api', 'bootstrap:true']);
+
+const staffActions = [];
+const staffFeature = new VerificationFeature({
+    session: {
+        async getActiveVerification() {
+            return {
+                type: 'staff-question',
+                question: { id: 42, question: 'how much is three plus one' },
+            };
+        },
+        async solveStaffQuestionVerification(question) {
+            staffActions.push(`staff:${question.id}`);
+        },
+    },
+    reporter: {
+        async update() {},
+    },
+});
+
+assert.equal(await staffFeature.tick(settings), true);
+assert.deepEqual(staffActions, ['staff:42']);
+
+assert.equal(solveStaffQuestion('How much is 3x7?'), '21');
+assert.equal(solveStaffQuestion('What is twenty-one minus nine'), '12');
+assert.equal(
+    solveStaffQuestion('What is two hundred and five divided by five?'),
+    '41',
+);
+assert.equal(
+    solveStaffQuestion('Please describe your current activity.'),
+    null,
+);
+
+const pixelWidth = 320;
+const pixelHeight = 130;
+const pixelGapX = 109;
+const pixelGapY = 18;
+const pixelGapWidth = 55;
+const pixelGapHeight = 95;
+const pixelData = new Uint8ClampedArray(pixelWidth * pixelHeight * 4);
+
+for (let y = 0; y < pixelHeight; y += 1) {
+    for (let x = 0; x < pixelWidth; x += 1) {
+        const offset = (y * pixelWidth + x) * 4;
+
+        pixelData[offset] = 10;
+        pixelData[offset + 1] = 90 + y;
+        pixelData[offset + 2] = 140 + Math.floor(y / 2);
+        pixelData[offset + 3] = 255;
+    }
+}
+
+for (let y = pixelGapY + 1; y < pixelGapY + pixelGapHeight - 1; y += 1) {
+    for (let x = pixelGapX + 1; x < pixelGapX + pixelGapWidth - 1; x += 1) {
+        const offset = (y * pixelWidth + x) * 4;
+
+        pixelData[offset] = 4;
+        pixelData[offset + 1] = 40;
+        pixelData[offset + 2] = 66;
+        pixelData[offset + 3] = 255;
+    }
+}
+
+assert.deepEqual(
+    findCaptchaGapFromPixels(
+        { data: pixelData, height: pixelHeight, width: pixelWidth },
+        { height: pixelGapHeight, width: pixelGapWidth },
+    ),
+    {
+        canvasWidth: pixelWidth,
+        gapX: pixelGapX,
+        gapWidth: pixelGapWidth,
+        ratio: pixelGapX / (pixelWidth - pixelGapWidth),
+    },
+);
 
 const artifactsDir = await fs.mkdtemp(
     '/tmp/arcaneangler-verification-smoke-',
@@ -245,8 +324,151 @@ try {
         answer: '50',
     });
 
+    const imageChallenge = await page.evaluate(() => {
+        const width = 320;
+        const height = 130;
+        const gapX = 109;
+        const gapY = 18;
+        const gapWidth = 55;
+        const gapHeight = 95;
+        const canvas = document.createElement('canvas');
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const context = canvas.getContext('2d');
+        const imageData = context.createImageData(width, height);
+
+        for (let y = 0; y < height; y += 1) {
+            for (let x = 0; x < width; x += 1) {
+                const offset = (y * width + x) * 4;
+
+                imageData.data[offset] = 10;
+                imageData.data[offset + 1] = 90 + y;
+                imageData.data[offset + 2] = 140 + Math.floor(y / 2);
+                imageData.data[offset + 3] = 255;
+            }
+        }
+
+        for (let y = gapY + 1; y < gapY + gapHeight - 1; y += 1) {
+            for (let x = gapX + 1; x < gapX + gapWidth - 1; x += 1) {
+                const offset = (y * width + x) * 4;
+
+                imageData.data[offset] = 4;
+                imageData.data[offset + 1] = 40;
+                imageData.data[offset + 2] = 66;
+                imageData.data[offset + 3] = 255;
+            }
+        }
+
+        context.putImageData(imageData, 0, 0);
+
+        return {
+            bgImage: canvas.toDataURL('image/png'),
+            pieceSvg: [
+                '<svg xmlns="http://www.w3.org/2000/svg"',
+                ' width="55" height="95" viewBox="0 0 55 95">',
+                '<rect width="55" height="95" fill="#fff"/>',
+                '</svg>',
+            ].join(''),
+            token: 'image-challenge-token',
+        };
+    });
+
+    apiSubmission = null;
+    session.rememberCaptchaChallenge({ result: imageChallenge });
+    assert.deepEqual(
+        await session.solveHumanVerificationThroughApi(),
+        { success: true },
+    );
+    assert.deepEqual(apiSubmission, {
+        token: 'image-challenge-token',
+        answer: '41',
+    });
+
+    const staffSubmissions = [];
+
+    await page.exposeFunction('recordStaffSubmission', submission => {
+        staffSubmissions.push(submission);
+    });
+    await page.evaluate(() => {
+        const popup = document.createElement('div');
+
+        popup.id = 'staff-question';
+        popup.style.cssText = 'position:fixed;left:20px;top:20px';
+        popup.innerHTML = `
+            <div>Staff Question</div>
+            <div>What is twenty-one minus nine?</div>
+            <input type="text" maxlength="500">
+            <button>Answer</button>
+        `;
+        popup.__reactFiber$smoke = {
+            memoizedProps: {},
+            return: {
+                memoizedProps: {
+                    castCountRef: { current: 5 },
+                    onDismiss() {
+                        popup.remove();
+                    },
+                    question: 'What is twenty-one minus nine?',
+                    questionId: 42,
+                },
+                return: null,
+            },
+        };
+        document.body.appendChild(popup);
+
+        window.ApiService.answerToastQuestion = async (
+            questionId,
+            answer,
+            castCount,
+        ) => {
+            await window.recordStaffSubmission({
+                questionId,
+                answer,
+                castCount,
+            });
+            return { success: true };
+        };
+    });
+    await session.collectStaffQuestionResponse({
+        request() {
+            return { method: () => 'GET' };
+        },
+        url() {
+            return 'https://example.test/api/moderation/pending-toast-question';
+        },
+        ok() {
+            return true;
+        },
+        async json() {
+            return {
+                pending: {
+                    id: 42,
+                    question: 'What is twenty-one minus nine?',
+                },
+            };
+        },
+    });
+
+    const staffVerification = await session.getActiveVerification();
+
+    assert.equal(staffVerification.type, 'staff-question');
+    assert.deepEqual(
+        await session.solveStaffQuestionVerification(
+            staffVerification.question,
+        ),
+        { success: true },
+    );
+    assert.deepEqual(staffSubmissions, [{
+        questionId: 42,
+        answer: '12',
+        castCount: 5,
+    }]);
+    assert.equal(await session.getActiveVerification(), null);
+
     console.log(
-        'Verification smoke passed: trusted events, completed-race detection and API fallback work.',
+        'Verification smoke passed: trusted events, image puzzles, Staff Questions and API fallback work.',
     );
 } finally {
     await browser.close();

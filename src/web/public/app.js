@@ -1914,7 +1914,7 @@ function renderVerificationHistory() {
         const empty = document.createElement('li');
 
         empty.className = 'muted';
-        empty.textContent = '暂无验证码记录';
+        empty.textContent = '暂无验证记录';
         fragment.append(empty);
     }
 

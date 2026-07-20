@@ -14,6 +14,12 @@ import {
 } from '../core/competition-schedule.js';
 import { AutomationPausedError } from '../core/operation-scheduler.js';
 import { SiteMaintenanceError } from '../core/site-availability.js';
+import {
+    findCaptchaGapFromPixels,
+    normalizeCaptchaChallenge,
+    normalizeStaffQuestion,
+    solveStaffQuestion,
+} from '../core/verification-challenges.js';
 
 const WORLD_BOSS_WAKE_WINDOW_MS = 15 * 60_000;
 
@@ -25,13 +31,6 @@ function normalizedDate(value, fallback = null) {
     }
 
     return fallback;
-}
-
-function normalizeCaptchaChallenge(value) {
-    const token = String(value?.token ?? '').trim();
-    const bgSvg = String(value?.bgSvg ?? '').trim();
-
-    return token && bgSvg ? { token, bgSvg } : null;
 }
 
 function normalizedFiniteNumber(value) {
@@ -309,6 +308,7 @@ export class ArcaneAnglerPage {
         this.lastSuccessfulCastAt = null;
         this.punishmentExpiresAt = null;
         this.activeCaptchaChallenge = null;
+        this.activeStaffQuestion = null;
         this.attachPage(page);
     }
 
@@ -422,6 +422,7 @@ export class ArcaneAnglerPage {
 
     replacePage(page) {
         this.activeCaptchaChallenge = null;
+        this.activeStaffQuestion = null;
         this.attachPage(page);
         this.pointerPosition = { x: 640, y: 450 };
     }
@@ -431,6 +432,7 @@ export class ArcaneAnglerPage {
         page.on('response', response => {
             void this.collectCastResponse(response);
             void this.collectCaptchaChallengeResponse(response);
+            void this.collectStaffQuestionResponse(response);
         });
     }
 
@@ -461,6 +463,49 @@ export class ArcaneAnglerPage {
                 phase: 'verification',
                 target: '读取验证题目',
                 message: `无法读取 CAPTCHA challenge：${error.message}`,
+            });
+        }
+    }
+
+    rememberStaffQuestion(value) {
+        this.activeStaffQuestion = normalizeStaffQuestion(value);
+        return this.activeStaffQuestion
+            ? structuredClone(this.activeStaffQuestion)
+            : null;
+    }
+
+    async collectStaffQuestionResponse(response) {
+        const request = response.request();
+        const method = request.method();
+        const pathname = new URL(response.url()).pathname;
+
+        if (
+            method === 'POST' &&
+            /^\/api\/moderation\/(?:answer|dismiss)-toast-question\/[^/]+$/.test(
+                pathname,
+            ) &&
+            response.ok()
+        ) {
+            this.activeStaffQuestion = null;
+            return;
+        }
+
+        if (
+            method !== 'GET' ||
+            pathname !== '/api/moderation/pending-toast-question' ||
+            !response.ok()
+        ) {
+            return;
+        }
+
+        try {
+            this.rememberStaffQuestion(await response.json());
+        } catch (error) {
+            await this.reporter.log({
+                level: 'error',
+                phase: 'verification',
+                target: '读取验证问题',
+                message: `无法读取 Staff Question：${error.message}`,
             });
         }
     }
@@ -1620,7 +1665,7 @@ export class ArcaneAnglerPage {
     }
 
     async dismissBlockingOverlays() {
-        if (await this.getVerificationOverlay()) {
+        if (await this.hasActiveVerification()) {
             return false;
         }
 
@@ -2960,6 +3005,100 @@ export class ArcaneAnglerPage {
         );
     }
 
+    async getVisibleStaffQuestion() {
+        return this.page.evaluate(() => {
+            const inputs = document.querySelectorAll(
+                'input[type="text"][maxlength="500"]',
+            );
+            const isVisibleElement = element => {
+                const style = window.getComputedStyle(element);
+                const rect = element.getBoundingClientRect();
+
+                return style.display !== 'none' &&
+                    style.visibility !== 'hidden' &&
+                    rect.width > 0 &&
+                    rect.height > 0;
+            };
+            const getFiber = element => {
+                const key = Object.keys(element ?? {}).find(candidate =>
+                    candidate.startsWith('__reactFiber$') ||
+                    candidate.startsWith('__reactInternalInstance$'),
+                );
+
+                return key ? element[key] : null;
+            };
+
+            for (const input of inputs) {
+                if (!isVisibleElement(input)) {
+                    continue;
+                }
+
+                for (const element of [input.parentElement, input]) {
+                    let fiber = getFiber(element);
+
+                    while (fiber) {
+                        const props = fiber.memoizedProps;
+
+                        if (
+                            props?.questionId != null &&
+                            typeof props.question === 'string' &&
+                            typeof props.onDismiss === 'function'
+                        ) {
+                            const castCount = Number(
+                                props.castCountRef?.current,
+                            );
+
+                            return {
+                                id: props.questionId,
+                                question: props.question,
+                                ...(Number.isFinite(castCount) && castCount >= 0
+                                    ? { castCount }
+                                    : {}),
+                            };
+                        }
+
+                        fiber = fiber.return;
+                    }
+                }
+            }
+
+            return null;
+        });
+    }
+
+    async getStaffQuestion() {
+        const visibleQuestion = await this.getVisibleStaffQuestion();
+
+        if (visibleQuestion) {
+            this.rememberStaffQuestion({
+                ...this.activeStaffQuestion,
+                ...visibleQuestion,
+            });
+        }
+
+        return this.activeStaffQuestion
+            ? structuredClone(this.activeStaffQuestion)
+            : null;
+    }
+
+    async getActiveVerification() {
+        const staffQuestion = await this.getStaffQuestion();
+
+        if (staffQuestion) {
+            return { type: 'staff-question', question: staffQuestion };
+        }
+
+        if (await this.getVerificationOverlay()) {
+            return { type: 'captcha' };
+        }
+
+        return null;
+    }
+
+    async hasActiveVerification() {
+        return Boolean(await this.getActiveVerification());
+    }
+
     async waitVerificationDelay() {
         await sleep(randomInteger(
             this.config.verificationStepDelayMinMs,
@@ -3043,7 +3182,53 @@ export class ArcaneAnglerPage {
         ));
     }
 
+    async getCaptchaImageFingerprint(range) {
+        return range.evaluate(input =>
+            [...(input.closest('div.fixed.inset-0.z-50')
+                ?.querySelectorAll('img') || [])]
+                .map(image => String(image.currentSrc || image.src))
+                .filter(Boolean)
+                .join('|'),
+        );
+    }
+
+    async getCaptchaChallenge() {
+        if (this.activeCaptchaChallenge) {
+            return structuredClone(this.activeCaptchaChallenge);
+        }
+
+        const response = await this.page.evaluate(async () => {
+            if (
+                typeof window.ApiService?.getCaptchaChallenge !== 'function'
+            ) {
+                throw new Error('页面未提供 CAPTCHA challenge API。');
+            }
+
+            return window.ApiService.getCaptchaChallenge();
+        });
+
+        return this.rememberCaptchaChallenge(response);
+    }
+
     async readCaptchaAnswer(range) {
+        const challenge = await this.getCaptchaChallenge().catch(() => null);
+
+        if (challenge) {
+            const answer = await this.readCaptchaApiAnswer(challenge);
+            const values = await range.evaluate(input => ({
+                min: Number(input.min || 0),
+                max: Number(input.max || 100),
+            }));
+
+            return {
+                ratio: answer / 100,
+                targetValue: Math.round(
+                    values.min + answer / 100 * (values.max - values.min),
+                ),
+                imageSource: await this.getCaptchaImageFingerprint(range),
+            };
+        }
+
         return range.evaluate(input => {
             const overlay = input.closest('div.fixed.inset-0.z-50');
             const image = [...(overlay?.querySelectorAll('img') || [])]
@@ -3126,24 +3311,7 @@ export class ArcaneAnglerPage {
     }
 
     async readCaptchaApiAnswer(challenge) {
-        return this.page.evaluate(bgSvg => {
-            const documentNode = new DOMParser().parseFromString(
-                bgSvg,
-                'image/svg+xml',
-            );
-
-            if (documentNode.querySelector('parsererror')) {
-                throw new Error('验证背景 SVG 解析失败。');
-            }
-
-            const root = documentNode.documentElement;
-            const gap = [...documentNode.querySelectorAll('rect')]
-                .find(rect => rect.hasAttribute('stroke-dasharray'));
-
-            if (!gap) {
-                throw new Error('验证背景 SVG 中找不到拼图缺口。');
-            }
-
+        const result = await this.page.evaluate(async currentChallenge => {
             const number = (value, field) => {
                 const parsed = Number.parseFloat(value);
 
@@ -3153,49 +3321,130 @@ export class ArcaneAnglerPage {
 
                 return parsed;
             };
-            const viewBox = root.getAttribute('viewBox')
-                ?.trim()
-                .split(/\s+/)
-                .map(Number);
-            const canvasWidth = viewBox?.length === 4 &&
-                Number.isFinite(viewBox[2])
-                ? viewBox[2]
-                : number(root.getAttribute('width'), '画布宽度');
-            const gapX = number(gap.getAttribute('x'), '缺口横坐标');
-            const gapWidth = number(gap.getAttribute('width'), '拼图宽度');
-            const travelWidth = canvasWidth - gapWidth;
-            const ratio = gapX / travelWidth;
+            const readSvg = (source, field) => {
+                const documentNode = new DOMParser().parseFromString(
+                    source,
+                    'image/svg+xml',
+                );
 
-            if (travelWidth <= 0 || ratio < 0 || ratio > 1) {
-                throw new Error('验证缺口坐标超出可移动范围。');
+                if (documentNode.querySelector('parsererror')) {
+                    throw new Error(`${field} SVG 解析失败。`);
+                }
+
+                const root = documentNode.documentElement;
+                const viewBox = root.getAttribute('viewBox')
+                    ?.trim()
+                    .split(/\s+/)
+                    .map(Number);
+                const width = root.hasAttribute('width')
+                    ? number(root.getAttribute('width'), `${field}宽度`)
+                    : viewBox?.[2];
+                const height = root.hasAttribute('height')
+                    ? number(root.getAttribute('height'), `${field}高度`)
+                    : viewBox?.[3];
+
+                if (!(width > 0) || !(height > 0)) {
+                    throw new Error(`无法读取${field}尺寸。`);
+                }
+
+                return { documentNode, height, width };
+            };
+
+            if (typeof currentChallenge?.bgSvg === 'string') {
+                const { documentNode, width: canvasWidth } = readSvg(
+                    currentChallenge.bgSvg,
+                    '验证背景',
+                );
+                const gap = [...documentNode.querySelectorAll('rect')]
+                    .find(rect => rect.hasAttribute('stroke-dasharray'));
+
+                if (!gap) {
+                    throw new Error('验证背景 SVG 中找不到拼图缺口。');
+                }
+
+                const gapX = number(gap.getAttribute('x'), '缺口横坐标');
+                const gapWidth = number(
+                    gap.getAttribute('width'),
+                    '拼图宽度',
+                );
+                const travelWidth = canvasWidth - gapWidth;
+                const ratio = gapX / travelWidth;
+
+                if (travelWidth <= 0 || ratio < 0 || ratio > 1) {
+                    throw new Error('验证缺口坐标超出可移动范围。');
+                }
+
+                return { kind: 'answer', ratio };
             }
 
-            return Math.round(ratio * 100);
-        }, challenge.bgSvg);
+            if (
+                typeof currentChallenge?.bgImage !== 'string' ||
+                typeof currentChallenge?.pieceSvg !== 'string'
+            ) {
+                throw new Error('CAPTCHA challenge 数据不完整。');
+            }
+
+            const piece = readSvg(currentChallenge.pieceSvg, '验证拼图');
+            const image = await new Promise((resolve, reject) => {
+                const element = new Image();
+
+                element.addEventListener('load', () => resolve(element), {
+                    once: true,
+                });
+                element.addEventListener(
+                    'error',
+                    () => reject(new Error('验证背景图片加载失败。')),
+                    { once: true },
+                );
+                element.src = currentChallenge.bgImage;
+            });
+            const canvas = document.createElement('canvas');
+
+            canvas.width = image.naturalWidth;
+            canvas.height = image.naturalHeight;
+
+            const context = canvas.getContext('2d', {
+                willReadFrequently: true,
+            });
+
+            if (!context) {
+                throw new Error('浏览器不支持读取验证背景图片。');
+            }
+
+            context.drawImage(image, 0, 0);
+
+            return {
+                kind: 'pixels',
+                width: canvas.width,
+                height: canvas.height,
+                data: Array.from(context.getImageData(
+                    0,
+                    0,
+                    canvas.width,
+                    canvas.height,
+                ).data),
+                piece: { width: piece.width, height: piece.height },
+            };
+        }, challenge);
+
+        const ratio = result.kind === 'answer'
+            ? result.ratio
+            : findCaptchaGapFromPixels({
+                width: result.width,
+                height: result.height,
+                data: Uint8ClampedArray.from(result.data),
+            }, result.piece).ratio;
+
+        return Math.round(ratio * 100);
     }
 
     async solveHumanVerificationThroughApi() {
         this.assertAutomationAllowed();
 
-        let challenge = this.activeCaptchaChallenge;
+        const challenge = await this.getCaptchaChallenge();
 
         if (!challenge) {
-            const response = await this.page.evaluate(async () => {
-                if (
-                    typeof window.ApiService?.getCaptchaChallenge !==
-                    'function'
-                ) {
-                    throw new Error('页面未提供 CAPTCHA challenge API。');
-                }
-
-                return window.ApiService.getCaptchaChallenge();
-            });
-
-            challenge = this.rememberCaptchaChallenge(response);
-        }
-
-        if (!challenge) {
-            throw new Error('CAPTCHA challenge 缺少 token 或背景 SVG。');
+            throw new Error('CAPTCHA challenge 数据不完整。');
         }
 
         const answer = await this.readCaptchaApiAnswer(challenge);
@@ -3234,6 +3483,123 @@ export class ArcaneAnglerPage {
         );
 
         this.activeCaptchaChallenge = null;
+        return result;
+    }
+
+    async solveStaffQuestionVerification(question) {
+        this.assertAutomationAllowed();
+
+        let latestQuestion = await this.getStaffQuestion() ?? question;
+
+        await this.reporter.update({
+            level: 'running',
+            phase: 'verification',
+            target: '回答 Staff Question',
+            message: '检测到验证（Staff Question），正在识别基础算术题。',
+        });
+        await this.waitVerificationDelay();
+
+        latestQuestion = await this.getStaffQuestion() ?? latestQuestion;
+
+        const answer = solveStaffQuestion(latestQuestion?.question);
+
+        if (answer == null) {
+            throw new Error(
+                `无法可靠回答 Staff Question：${
+                    latestQuestion?.question || '未知题目'
+                }`,
+            );
+        }
+
+        const result = await this.page.evaluate(
+            async ({ question: pendingQuestion, answer: answerValue }) => {
+                const getFiber = element => {
+                    const key = Object.keys(element ?? {}).find(candidate =>
+                        candidate.startsWith('__reactFiber$') ||
+                        candidate.startsWith('__reactInternalInstance$'),
+                    );
+
+                    return key ? element[key] : null;
+                };
+                let staffProps = null;
+
+                for (const input of document.querySelectorAll(
+                    'input[type="text"][maxlength="500"]',
+                )) {
+                    for (const element of [input.parentElement, input]) {
+                        let fiber = getFiber(element);
+
+                        while (fiber) {
+                            const props = fiber.memoizedProps;
+
+                            if (
+                                props?.questionId != null &&
+                                typeof props.question === 'string' &&
+                                typeof props.onDismiss === 'function'
+                            ) {
+                                staffProps = props;
+                                break;
+                            }
+
+                            fiber = fiber.return;
+                        }
+
+                        if (staffProps) {
+                            break;
+                        }
+                    }
+
+                    if (staffProps) {
+                        break;
+                    }
+                }
+
+                const questionId = staffProps?.questionId ?? pendingQuestion.id;
+                const castCount = Number(
+                    staffProps?.castCountRef?.current ??
+                        pendingQuestion.castCount ?? 0,
+                );
+
+                if (questionId == null) {
+                    throw new Error('Staff Question 缺少题目 ID。');
+                }
+
+                if (
+                    typeof window.ApiService?.answerToastQuestion !== 'function'
+                ) {
+                    throw new Error('页面未提供 Staff Question 验证 API。');
+                }
+
+                const response = await window.ApiService.answerToastQuestion(
+                    questionId,
+                    answerValue,
+                    Number.isFinite(castCount) && castCount >= 0
+                        ? castCount
+                        : 0,
+                );
+
+                staffProps?.onDismiss();
+                return response;
+            },
+            { question: latestQuestion, answer },
+        );
+
+        this.activeStaffQuestion = null;
+        await waitUntil(
+            async () => !(await this.getVisibleStaffQuestion()),
+            {
+                timeoutMs: 1_500,
+                message: 'Staff Question 弹窗关闭超时',
+                shouldStop: this.shouldStop,
+            },
+        );
+        await this.reporter.update({
+            level: 'running',
+            phase: 'verification',
+            target: '恢复自动化',
+            message: 'Staff Question 已完成，恢复自动操作。',
+        });
+
         return result;
     }
 
@@ -3391,14 +3757,8 @@ export class ArcaneAnglerPage {
                 const nextRange = await this.getCaptchaRange();
 
                 if (nextRange) {
-                    const nextImageSource = await nextRange.evaluate(input =>
-                        [...(input.closest('div.fixed.inset-0.z-50')
-                            ?.querySelectorAll('img') || [])]
-                            .find(image => String(
-                                image.currentSrc || image.src,
-                            ).startsWith('data:image/svg+xml'))
-                            ?.currentSrc || '',
-                    );
+                    const nextImageSource =
+                        await this.getCaptchaImageFingerprint(nextRange);
 
                     if (
                         nextImageSource &&
@@ -3417,7 +3777,7 @@ export class ArcaneAnglerPage {
     }
 
     async waitForHumanVerification() {
-        if (!(await this.getVerificationOverlay())) {
+        if (!(await this.getActiveVerification())) {
             return false;
         }
 
@@ -3425,18 +3785,18 @@ export class ArcaneAnglerPage {
             level: 'waiting',
             phase: 'verification',
             target: '等待人工验证',
-            message: '检测到人机验证，自动操作已暂停，请手动完成。',
+            message: '检测到需要处理的验证，自动操作已暂停，请手动完成。',
         });
         await this.captureScreenshot('human-verification');
 
         let lastReminderAt = Date.now();
 
-        while (!this.shouldStop() && await this.getVerificationOverlay()) {
+        while (!this.shouldStop() && await this.getActiveVerification()) {
             await sleep(5_000);
 
             if (Date.now() - lastReminderAt >= 60_000) {
                 await this.reporter.update({
-                    message: '仍在等待手动完成人机验证。',
+                    message: '仍在等待手动完成验证。',
                 });
                 lastReminderAt = Date.now();
             }
@@ -3447,7 +3807,7 @@ export class ArcaneAnglerPage {
                 level: 'running',
                 phase: 'fishing',
                 target: '恢复自动钓鱼',
-                message: '人机验证已关闭，恢复自动化。',
+                message: '验证已关闭，恢复自动化。',
             });
         }
 

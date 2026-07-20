@@ -3,7 +3,7 @@ import { AUTOMATION_PAUSED_CODE } from '../core/operation-scheduler.js';
 export class VerificationFeature {
     constructor({ session, reporter }) {
         this.id = 'verification';
-        this.label = '人机验证';
+        this.label = '自动验证';
         this.priority = 0;
         this.session = session;
         this.reporter = reporter;
@@ -16,26 +16,48 @@ export class VerificationFeature {
     reset() {}
 
     async tick(settings) {
-        if (!(await this.session.getVerificationOverlay())) {
+        const verification = await this.session.getActiveVerification();
+
+        if (!verification) {
             return false;
         }
 
         if (settings.features.verification.enabled) {
             try {
-                await this.session.solveHumanVerification();
+                if (verification.type === 'staff-question') {
+                    await this.session.solveStaffQuestionVerification(
+                        verification.question,
+                    );
+                } else {
+                    await this.session.solveHumanVerification();
+                }
                 return true;
-            } catch (mouseError) {
-                if (mouseError.code === AUTOMATION_PAUSED_CODE) {
-                    throw mouseError;
+            } catch (primaryError) {
+                if (primaryError.code === AUTOMATION_PAUSED_CODE) {
+                    throw primaryError;
                 }
 
-                if (!(await this.session.getVerificationOverlay())) {
+                if (!(await this.session.getActiveVerification())) {
                     await this.reporter.update({
                         level: 'running',
                         phase: 'verification',
                         target: '恢复自动化',
-                        message: '人机验证弹窗已关闭，确认验证已完成。',
+                        message: '验证界面已关闭，确认验证已完成。',
                     });
+                    return true;
+                }
+
+                if (verification.type === 'staff-question') {
+                    await this.session.captureScreenshot(
+                        'staff-question-verification-failed',
+                    );
+                    await this.reporter.update({
+                        level: 'error',
+                        phase: 'verification',
+                        target: '等待人工验证',
+                        message: `Staff Question 自动处理失败：${primaryError.message}`,
+                    });
+                    await this.session.waitForHumanVerification();
                     return true;
                 }
 
@@ -43,7 +65,7 @@ export class VerificationFeature {
                     level: 'waiting',
                     phase: 'verification',
                     target: '使用 API 完成人机验证',
-                    message: `模拟手动验证失败：${mouseError.message}；正在复用当前题目通过页面验证 API 提交。`,
+                    message: `模拟手动验证失败：${primaryError.message}；正在复用当前题目通过页面验证 API 提交。`,
                 });
 
                 try {
@@ -56,7 +78,7 @@ export class VerificationFeature {
                         level: 'error',
                         phase: 'verification',
                         target: '等待人工验证',
-                        message: `模拟手动验证失败：${mouseError.message}；API 兜底也失败：${apiError.message}`,
+                        message: `模拟手动验证失败：${primaryError.message}；API 兜底也失败：${apiError.message}`,
                     });
                     await this.session.waitForHumanVerification();
                     return true;
