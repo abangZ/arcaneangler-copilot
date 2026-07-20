@@ -137,6 +137,10 @@ export class FishingFeature {
     }
 
     async tick(settings) {
+        if (await this.session.hasActiveVerification?.()) {
+            return true;
+        }
+
         if (await this.session.dismissBlockingOverlays()) {
             this.lastProgressAt = this.now();
             return true;
@@ -220,6 +224,7 @@ export class FishingFeature {
             if (
                 latestSettings.automationEnabled &&
                 latestSettings.features.fishing.enabled &&
+                !(await this.session.hasActiveVerification?.()) &&
                 await isVisible(castButton) &&
                 await castButton.isEnabled()
             ) {

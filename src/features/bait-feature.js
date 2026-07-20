@@ -74,6 +74,10 @@ export class BaitFeature {
     }
 
     async tick(settings) {
+        if (await this.session.hasActiveVerification?.()) {
+            return true;
+        }
+
         const competition = this.session.getActiveCompetition?.() || null;
         const baitSettings = this.refreshConfiguration(
             settings,
@@ -196,10 +200,7 @@ export class BaitFeature {
                 await this.reporter.update({
                     message: `已购买 ${baitSettings.purchaseQuantity} 个 ${targetBait.name}，当前库存 ${purchase.stock}。`,
                 });
-                state = await this.session.inspectBait(
-                    targetBait.id,
-                    catalog,
-                );
+                state = { ...state, stock: purchase.stock };
             }
 
             const hasUsableStock = state.price === 0 || state.stock > 0;

@@ -9,7 +9,26 @@ import {
     BaitFeature,
     selectBaitTier,
 } from '../src/features/bait-feature.js';
-import { ArcaneAnglerPage } from '../src/site/arcane-angler-page.js';
+import {
+    ArcaneAnglerPage,
+    resolvePurchasedBaitStock,
+} from '../src/site/arcane-angler-page.js';
+
+assert.equal(
+    resolvePurchasedBaitStock({
+        success: true,
+        newBaitQuantity: 198,
+    }, 98),
+    198,
+);
+assert.equal(
+    resolvePurchasedBaitStock({
+        result: { newBaitQuantity: 250 },
+        success: true,
+    }, 150),
+    250,
+);
+assert.equal(resolvePurchasedBaitStock({ success: true }, 98), null);
 
 const artifactsDir = await fs.mkdtemp('/tmp/arcaneangler-bait-smoke-');
 const reporter = new StatusReporter();

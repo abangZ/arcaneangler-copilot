@@ -271,6 +271,53 @@ await waitForCastButtonToLeaveReadyState({
 });
 assert.deepEqual(buttonWaitChunks, [50]);
 
+const verificationRaceSettings = structuredClone(DEFAULT_SETTINGS);
+verificationRaceSettings.automationEnabled = true;
+verificationRaceSettings.features.fishing.clickDelayMinMs = 0;
+verificationRaceSettings.features.fishing.clickDelayMaxMs = 0;
+verificationRaceSettings.features.fishing.shortPauseEnabled = false;
+verificationRaceSettings.features.fishing.longPauseEnabled = false;
+verificationRaceSettings.advanced.pollIntervalMs = 0;
+let verificationCheckIndex = 0;
+let verificationRaceClicks = 0;
+let verificationRaceCasts = 0;
+const verificationRaceSession = {
+    hasActiveVerification: async () => [false, false, true][
+        verificationCheckIndex++
+    ] ?? true,
+    dismissBlockingOverlays: async () => false,
+    isCharacterPickerVisible: async () => false,
+    isGameShellVisible: async () => true,
+    ensureClassicCastMode: async () => {},
+    isFishingPage: async () => true,
+    getLastSuccessfulCastAt: () => null,
+    getReadyCastButton: async () => ({
+        isVisible: async () => true,
+        isEnabled: async () => true,
+    }),
+    getActiveCompetition: () => null,
+    assertAutomationAllowed: () => {},
+    trustedClickRandomPosition: async () => {
+        verificationRaceClicks += 1;
+    },
+};
+const verificationRaceFeature = new FishingFeature({
+    session: verificationRaceSession,
+    settings: { get: () => verificationRaceSettings },
+    reporter: {
+        update: async () => {},
+        incrementCast: async () => {
+            verificationRaceCasts += 1;
+        },
+    },
+});
+
+await verificationRaceFeature.tick(verificationRaceSettings);
+await verificationRaceFeature.tick(verificationRaceSettings);
+assert.equal(verificationCheckIndex, 3);
+assert.equal(verificationRaceClicks, 0);
+assert.equal(verificationRaceCasts, 0);
+
 let fishingNow = 1_000;
 let lastSuccessfulCastAt = null;
 const recoveryActions = [];

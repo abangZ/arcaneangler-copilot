@@ -43,6 +43,10 @@ export class WorldBossFeature {
     }
 
     async tick() {
+        if (await this.session.hasActiveVerification?.()) {
+            return true;
+        }
+
         const now = Date.now();
 
         if (now < this.nextCheckAt) {

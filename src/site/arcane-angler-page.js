@@ -43,6 +43,15 @@ function normalizedFiniteNumber(value) {
     return Number.isFinite(number) ? number : null;
 }
 
+export function resolvePurchasedBaitStock(payload, previousStock) {
+    const result = payload?.result ?? payload;
+    const stock = Number(result?.newBaitQuantity);
+
+    return Number.isSafeInteger(stock) && stock > previousStock
+        ? stock
+        : null;
+}
+
 function normalizedGearId(value) {
     const id = String(value ?? '').trim();
 
@@ -2742,6 +2751,25 @@ export class ArcaneAnglerPage {
 
         if (response && !response.ok()) {
             throw new Error(`购买鱼饵失败：HTTP ${response.status()}`);
+        }
+
+        if (response) {
+            const payload = await response.json().catch(() => null);
+            const result = payload?.result ?? payload;
+
+            if (payload?.success === false || result?.success === false) {
+                throw new Error('购买鱼饵失败：服务端未接受购买请求');
+            }
+
+            const responseStock = resolvePurchasedBaitStock(
+                payload,
+                previousStock,
+            );
+
+            if (responseStock != null) {
+                this.rememberBaitQuantity(baitId, responseStock);
+                return { purchased: true, stock: responseStock };
+            }
         }
 
         let current = null;

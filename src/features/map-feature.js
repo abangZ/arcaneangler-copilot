@@ -185,6 +185,10 @@ export class MapFeature {
     }
 
     async tick(settings) {
+        if (await this.session.hasActiveVerification?.()) {
+            return true;
+        }
+
         const mapSettings = this.refreshConfiguration(settings);
 
         this.refreshCompetition();
