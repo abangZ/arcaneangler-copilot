@@ -2,7 +2,7 @@
 
 ## 项目定位
 
-- 本项目是面向 Linux 服务器长期运行的 Playwright 自动化服务，默认使用无头 Chromium。
+- 本项目是面向 Linux 服务器长期运行的 Playwright 自动化服务，默认使用无头 Chromium；常驻进程可以由 systemd 或 PM2 托管，运维前先确认服务器实际使用的进程管理器。
 - 当前交互入口是独立 Web 控制台；服务启动时只启动控制面，用户保存配置并点击启动后才创建 Playwright Worker。不要在游戏页面注入操作面板。
 - `README.md` 面向开源用户，只写当前可用能力、安装、配置、运行、排障和免责声明；不要写会话讨论、实现过程、历史方案、测试账号或本地绝对路径。
 - 内部架构说明放在 `docs/architecture.md`；阶段性交接和页面结构证据不要进入公开仓库或 README。
@@ -28,17 +28,20 @@
 
 - 普通页面点击使用 Playwright `Locator.click()`，它已经产生可信事件；不要改成页面上下文中的 `HTMLElement.click()`。
 - Human Verification 可以使用真实鼠标移动、点击和拖动，其他普通操作无需额外模拟鼠标轨迹。
-- quiet hours 是浏览器生命周期边界：进入 quiet 时关闭整个 persistent context，恢复时重新创建 context/page，并通过 `session.replacePage()` 更新页面引用。
+- quiet hours 是浏览器生命周期边界：默认进入 quiet 时关闭整个 persistent context，恢复时重新创建 context/page，并通过 `session.replacePage()` 更新页面引用；只有显式启用夜间游戏 Auto-Cast 接管时才保留 context。
 - Web 控制面不受 quiet hours、手动暂停和 Worker 异常影响；这些状态只改变 Playwright Worker 生命周期。
 - 操作前继续经过 scheduler gate；不要让较长的 feature 跨过休息或 quiet 边界后继续点击。
+- 站点维护页使用 `SiteMaintenanceError` 单独限频重试，不计入普通连续恢复错误，也不要在维护期间高频刷新。
 - 页面 console 不作为状态事实来源；页面操作集中在 `ArcaneAnglerPage`，feature 只编排语义操作。
 
 ## 功能约束
 
-- `VerificationFeature`、`MapFeature`、`BaitFeature`、`FishingFeature` 按优先级依次处理，不要把 DOM Locator 放进 feature 或 HTTP handler。
+- `VerificationFeature`、`WorldBossFeature`、`MapFeature`、`BaitFeature`、`FishingFeature` 按优先级依次处理，不要把 DOM Locator 放进 feature 或 HTTP handler。
+- `VerificationFeature` 始终负责拦截验证；关闭自动验证只代表转交人工处理。其他 feature 在操作前必须让路给当前验证，钓鱼在延迟结束、真正点击前还要再次检查，避免弹窗竞态。
 - 自动鱼饵默认关闭，避免首次启动自动消费金币。
-- 鱼饵购买和装备必须点击页面已有控件，不直接构造游戏 API 请求。
+- 鱼饵购买和装备必须点击页面已有控件，不直接构造游戏 API 请求；购买后可以观察页面自己产生的 `/api/game/buy-bait` 响应，用 `newBaitQuantity` 确认库存，响应缺失时再回退 DOM 检查。
 - 普通抛竿同样只走页面控件，不直接调用 `/api/game/cast`。
+- 验证同时兼容旧版 `bgSvg`、新版 `bgImage + pieceSvg` 拼图和 Staff Question；只自动回答能够可靠解析的基础算术题，其他题目保留弹窗等待人工处理。
 - 页面文案可能被汉化，Locator 优先依赖结构、状态 class、`disabled`、稳定属性和请求路径，英文文本只作兼容兜底。
 
 ## 修改与验证
@@ -52,9 +55,12 @@ pnpm run check
 pnpm run smoke:web
 pnpm run smoke:reporter
 pnpm run smoke:fingerprint
+pnpm run smoke:fishing
+pnpm run smoke:maintenance
 pnpm run smoke:scheduler
 pnpm run smoke:stats
 pnpm run smoke:map
+pnpm run smoke:world-boss
 pnpm run smoke:bait
 pnpm run smoke:verification
 pnpm run smoke

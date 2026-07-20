@@ -11,11 +11,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/abangZ/tampermonkey-scripts.git",
-    "directory": "arcaneangler-copilot"
+    "url": "git+https://github.com/abangZ/arcaneangler-copilot.git"
   },
-  "homepage": "https://github.com/abangZ/tampermonkey-scripts/tree/main/arcaneangler-copilot",
-  "bugs": "https://github.com/abangZ/tampermonkey-scripts/issues",
+  "homepage": "https://github.com/abangZ/arcaneangler-copilot",
+  "bugs": "https://github.com/abangZ/arcaneangler-copilot/issues",
   "packageManager": "pnpm@9.15.4",
   "engines": {
     "node": ">=20"
