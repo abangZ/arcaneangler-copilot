@@ -171,7 +171,7 @@ feature 只编排语义操作：
 
 HTTP API 和 Web UI 不得直接持有 DOM Locator，也不得绕过 Engine queue 调用页面方法。
 
-装备管理是显式的用户操作，不属于自动化 feature。Web 只发送 gear ID 和可选戒指槽位，`WorkerController` 串行转发；`ArcaneAnglerPage` 在提交穿戴/出售前重新读取服务器装备列表，拒绝不存在、已穿戴或已锁定的出售项。返回给 Web 的装备快照只包含展示所需字段，不转发 owner 等原始响应数据。
+装备管理是显式的用户操作，不属于自动化 feature。Web 根据装备快照派生同槽位属性对比，并在浏览器本地保存各稀有度的分解品质阈值；向服务端仍只发送 gear ID 和可选戒指槽位。`WorkerController` 串行转发；`ArcaneAnglerPage` 在提交穿戴/出售前重新读取服务器装备列表，拒绝不存在、已穿戴或已锁定的出售项。返回给 Web 的装备快照只包含展示所需字段，不转发 owner 等原始响应数据。
 
 ## 状态和日志
 
@@ -209,7 +209,7 @@ SIGINT / SIGTERM 的顺序是：
 
 ## 验证
 
-- `pnpm run smoke:web`：challenge 登录、多终端 session/独立退出、CSRF、配置持久化、收益 API、装备字段归一化、穿戴/批量出售、SSE 和 Worker 控制。
+- `pnpm run smoke:web`：challenge 登录、多终端 session/独立退出、CSRF、配置持久化、收益 API、装备字段归一化、非零属性和同槽位对比、按稀有度品质规则批选、穿戴/批量出售、SSE 和 Worker 控制。
 - `pnpm run smoke:reporter`：运行配置快照、结构化输出、重复抑制和连续运行时的每日文件保留。
 - `pnpm run smoke:fingerprint`：生产 browser profile 的 UA、webdriver、plugins 和 `window.chrome`。
 - `pnpm run smoke:fishing`：默认普通延迟、90%/8%/2% 概率边界、验证弹窗点击竞态、停顿独立开关/自定义范围、旧配置迁移和比赛期间长停顿覆盖。

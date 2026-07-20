@@ -54,6 +54,8 @@ const elementIds = [
     'gear-equipped-grid', 'gear-backpack-meta', 'gear-selected-count',
     'gear-select-page', 'gear-clear-selection', 'gear-sell-selected',
     'gear-search', 'gear-slot-filter', 'gear-rarity-filter', 'gear-sort',
+    'gear-rule-list', 'gear-rule-only', 'gear-rule-match-count',
+    'gear-select-rules',
     'gear-backpack-grid', 'gear-page-prev', 'gear-page-label',
     'gear-page-next',
     'settings-back', 'load-error-warning', 'settings-form',
@@ -99,6 +101,7 @@ const state = {
     gearBusy: false,
     selectedGearIds: new Set(),
     gearPage: 1,
+    gearRules: null,
 };
 
 const WORKER_LABELS = {
@@ -210,6 +213,65 @@ const GEAR_RARITY_RANK = Object.freeze({
     Exotic: 8,
     Arcane: 9,
 });
+const GEAR_RARITIES = Object.freeze(Object.keys(GEAR_RARITY_RANK));
+const GEAR_RULE_STORAGE_KEY = 'arcane-copilot:gear-rules:v1';
+const GEAR_STAT_DISPLAY = Object.freeze([
+    ['strength', '力量'],
+    ['intelligence', '智力'],
+    ['luck', '运气'],
+    ['stamina', '耐力'],
+]);
+
+function normalizeGearQualityThreshold(value) {
+    const number = Math.floor(Number(value));
+
+    return Number.isFinite(number)
+        ? Math.min(100, Math.max(0, number))
+        : 100;
+}
+
+function defaultGearRules() {
+    return Object.fromEntries(GEAR_RARITIES.map(rarity => [
+        rarity,
+        { enabled: false, maxQuality: 100 },
+    ]));
+}
+
+function loadGearRules() {
+    const rules = defaultGearRules();
+
+    try {
+        const saved = JSON.parse(localStorage.getItem(GEAR_RULE_STORAGE_KEY));
+
+        for (const rarity of GEAR_RARITIES) {
+            if (saved?.[rarity]) {
+                rules[rarity] = {
+                    enabled: saved[rarity].enabled === true,
+                    maxQuality: normalizeGearQualityThreshold(
+                        saved[rarity].maxQuality,
+                    ),
+                };
+            }
+        }
+    } catch {
+        // Ignore unavailable storage and malformed older values.
+    }
+
+    return rules;
+}
+
+function saveGearRules() {
+    try {
+        localStorage.setItem(
+            GEAR_RULE_STORAGE_KEY,
+            JSON.stringify(state.gearRules),
+        );
+    } catch {
+        // The current in-memory rules still work when storage is unavailable.
+    }
+}
+
+state.gearRules = loadGearRules();
 
 function base64UrlToBytes(value) {
     const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
@@ -464,10 +526,136 @@ function createGearText(tag, className, text) {
     return element;
 }
 
-function createGearCard(gear, { equippedSlot = null } = {}) {
+function formatGearStat(value) {
+    const number = Number(value) || 0;
+
+    return `${number > 0 ? '+' : ''}${formatNumber(number, 0)}`;
+}
+
+function gearQualityTone(value) {
+    const quality = Number(value) || 0;
+
+    if (quality >= 76) {
+        return 'excellent';
+    }
+    if (quality >= 51) {
+        return 'good';
+    }
+    if (quality >= 26) {
+        return 'fair';
+    }
+    return 'low';
+}
+
+function createGearSlot(displayedSlot) {
+    return createGearText(
+        'span',
+        'gear-slot-badge',
+        `${displayedSlot.icon} ${displayedSlot.label}`,
+    );
+}
+
+function createGearStats(gear) {
+    const stats = document.createElement('dl');
+
+    stats.className = 'gear-card-stats';
+    for (const [key, label] of GEAR_STAT_DISPLAY) {
+        const entry = document.createElement('div');
+        const value = Number(gear.stats[key]) || 0;
+
+        entry.dataset.stat = key;
+        if (value !== 0) {
+            entry.append(
+                createGearText('dt', '', label),
+                createGearText('dd', '', formatGearStat(value)),
+            );
+        } else {
+            entry.className = 'gear-stat-empty';
+            entry.setAttribute('aria-hidden', 'true');
+        }
+        stats.append(entry);
+    }
+
+    return stats;
+}
+
+function createComparisonChange(label, delta, title, key) {
+    const change = document.createElement('span');
+
+    change.className = `gear-comparison-change ${delta > 0 ? 'positive' : 'negative'}`;
+    change.dataset.comparison = key;
+    change.title = title;
+    change.append(
+        createGearText('b', '', label),
+        document.createTextNode(` ${formatGearStat(delta)}`),
+    );
+    return change;
+}
+
+function createGearComparison(gear, { slot, gear: equippedGear }) {
+    const comparison = document.createElement('section');
+    const displayedSlot = gearSlotDisplay(slot);
+    const changes = document.createElement('div');
+    let statChangeCount = 0;
+
+    comparison.className = 'gear-comparison';
+    comparison.dataset.comparisonSlot = slot;
+    comparison.append(createGearText(
+        'strong',
+        'gear-comparison-title',
+        equippedGear
+            ? `对比已穿戴 ${displayedSlot.label}`
+            : `${displayedSlot.label}未穿戴`,
+    ));
+    changes.className = 'gear-comparison-changes';
+
+    for (const [key, label] of GEAR_STAT_DISPLAY) {
+        const currentValue = Number(gear.stats[key]) || 0;
+        const equippedValue = Number(equippedGear?.stats[key]) || 0;
+        const delta = currentValue - equippedValue;
+
+        if (delta === 0) {
+            const empty = document.createElement('span');
+
+            empty.className = 'gear-comparison-empty';
+            empty.dataset.comparison = key;
+            empty.setAttribute('aria-hidden', 'true');
+            changes.append(empty);
+            continue;
+        }
+
+        statChangeCount += 1;
+        changes.append(createComparisonChange(
+            label,
+            delta,
+            `已穿戴 ${formatNumber(equippedValue, 0)} → 当前 ${formatNumber(currentValue, 0)}`,
+            key,
+        ));
+    }
+
+    if (statChangeCount === 0) {
+        const same = createGearText(
+            'span',
+            'gear-comparison-same',
+            '属性无变化',
+        );
+
+        changes.replaceChildren(same);
+    }
+
+    comparison.append(changes);
+    return comparison;
+}
+
+function createGearCard(
+    gear,
+    { equippedSlot = null, comparisonTargets = [] } = {},
+) {
     const card = document.createElement('article');
     const header = document.createElement('div');
     const title = document.createElement('div');
+    const titleLine = document.createElement('div');
+    const subline = document.createElement('div');
     const rarity = rarityDisplay(gear.rarity);
     const displayedSlot = gearSlotDisplay(equippedSlot || gear.slot);
 
@@ -476,10 +664,13 @@ function createGearCard(gear, { equippedSlot = null } = {}) {
         `rarity-${rarity.tone}`,
         equippedSlot ? 'equipped' : '',
         gear.isLocked ? 'locked' : '',
+        state.selectedGearIds.has(gear.id) ? 'selected' : '',
     ].filter(Boolean).join(' ');
     card.dataset.gearId = gear.id;
     header.className = 'gear-card-header';
     title.className = 'gear-card-title';
+    titleLine.className = 'gear-card-title-line';
+    subline.className = 'gear-card-subline';
 
     if (!equippedSlot) {
         const selection = document.createElement('input');
@@ -493,59 +684,60 @@ function createGearCard(gear, { equippedSlot = null } = {}) {
                 !selection.checked &&
                 state.selectedGearIds.size >= GEAR_SALE_LIMIT
             );
-        selection.setAttribute('aria-label', `选择出售 ${gear.name}`);
+        selection.setAttribute('aria-label', `选择分解 ${gear.name}`);
         header.append(selection);
     }
 
-    title.append(
-        createGearText('strong', 'gear-name', gear.name),
+    titleLine.append(
         createGearText(
-            'span',
-            `gear-rarity ${rarity.tone}`,
-            rarity.label,
+            'strong',
+            `gear-name ${rarity.tone}`,
+            gear.name,
+        ),
+        createGearText(
+            'strong',
+            `gear-quality ${gearQualityTone(gear.quality)}`,
+            `${formatNumber(gear.quality, 0)}%`,
         ),
     );
-    header.append(title);
-
-    const meta = createGearText(
-        'div',
-        'gear-meta',
-        `${displayedSlot.icon} ${displayedSlot.label} · 品质 ${formatNumber(gear.quality, 0)}% · +${formatNumber(gear.upgradeLevel, 0)}`,
+    if (gear.upgradeLevel > 0) {
+        titleLine.append(createGearText(
+            'span',
+            'gear-upgrade',
+            `+${formatNumber(gear.upgradeLevel, 0)}`,
+        ));
+    }
+    subline.append(createGearText(
+        'span',
+        `gear-rarity ${rarity.tone}`,
+        rarity.label,
+    ));
+    if (!equippedSlot) {
+        subline.append(createGearText(
+            'span',
+            'gear-sell-value',
+            gear.sellValue > 0
+                ? `${formatNumber(gear.sellValue, 0)} 金币`
+                : '价值未知',
+        ));
+    }
+    title.append(titleLine, subline);
+    header.append(
+        title,
+        createGearSlot(displayedSlot),
     );
-    const stats = document.createElement('dl');
+    const stats = createGearStats(gear);
 
-    stats.className = 'gear-card-stats';
-    for (const [label, value] of [
-        ['STR', gear.stats.strength],
-        ['INT', gear.stats.intelligence],
-        ['LUK', gear.stats.luck],
-        ['STA', gear.stats.stamina],
-    ]) {
-        const entry = document.createElement('div');
+    let footer = null;
 
-        entry.append(
-            createGearText('dt', '', label),
-            createGearText('dd', '', `+${formatNumber(value, 0)}`),
-        );
-        stats.append(entry);
+    if (!equippedSlot) {
+        footer = document.createElement('div');
+        footer.className = 'gear-card-footer';
     }
 
-    const footer = document.createElement('div');
-
-    footer.className = 'gear-card-footer';
-    footer.append(createGearText(
-        'span',
-        'gear-sell-value',
-        gear.sellValue > 0
-            ? `出售 ${formatNumber(gear.sellValue, 0)} 金币`
-            : '出售价值未知',
-    ));
-
-    if (equippedSlot) {
-        footer.append(createGearText('span', 'gear-equipped-mark', '已穿戴'));
-    } else if (gear.isLocked) {
+    if (footer && gear.isLocked) {
         footer.append(createGearText('span', 'gear-locked-mark', '已锁定'));
-    } else {
+    } else if (footer) {
         const actions = document.createElement('div');
 
         actions.className = 'gear-equip-actions';
@@ -570,14 +762,26 @@ function createGearCard(gear, { equippedSlot = null } = {}) {
         footer.append(actions);
     }
 
-    card.append(header, meta, stats, footer);
+    card.append(header, stats);
+    if (comparisonTargets.length > 0) {
+        const comparisons = document.createElement('div');
+
+        comparisons.className = 'gear-comparisons';
+        for (const target of comparisonTargets) {
+            comparisons.append(createGearComparison(gear, target));
+        }
+        card.append(comparisons);
+    }
+    if (footer) {
+        card.append(footer);
+    }
     return card;
 }
 
-function renderEquippedGears(gears) {
+function equippedGearSlots(gears) {
     const equipped = gears.filter(gear => gear.isEquipped);
     const used = new Set();
-    const fragment = document.createDocumentFragment();
+    const slots = new Map();
 
     for (const slot of GEAR_SLOTS) {
         let gear = equipped.find(candidate =>
@@ -593,6 +797,34 @@ function renderEquippedGears(gears) {
 
         if (gear) {
             used.add(gear.id);
+            slots.set(slot, gear);
+        }
+    }
+
+    return slots;
+}
+
+function gearComparisonTargets(gear, slots) {
+    if (['ring', 'ring_1', 'ring_2'].includes(gear.slot)) {
+        return ['ring_1', 'ring_2'].map(slot => ({
+            slot,
+            gear: slots.get(slot) || null,
+        }));
+    }
+
+    return GEAR_SLOTS.includes(gear.slot)
+        ? [{ slot: gear.slot, gear: slots.get(gear.slot) || null }]
+        : [];
+}
+
+function renderEquippedGears(gears) {
+    const slots = equippedGearSlots(gears);
+    const fragment = document.createDocumentFragment();
+
+    for (const slot of GEAR_SLOTS) {
+        const gear = slots.get(slot);
+
+        if (gear) {
             fragment.append(createGearCard(gear, { equippedSlot: slot }));
             continue;
         }
@@ -612,6 +844,99 @@ function renderEquippedGears(gears) {
     elements['gear-equipped-grid'].replaceChildren(fragment);
 }
 
+function gearMatchesRule(gear) {
+    const rule = state.gearRules[gear.rarity];
+
+    return Boolean(
+        !gear.isEquipped &&
+        !gear.isLocked &&
+        rule?.enabled &&
+        gear.quality <= rule.maxQuality
+    );
+}
+
+function gearRuleMatches() {
+    return (state.gear?.gears || []).filter(gearMatchesRule);
+}
+
+function ensureGearRuleControls() {
+    if (elements['gear-rule-list'].childElementCount > 0) {
+        return;
+    }
+
+    const fragment = document.createDocumentFragment();
+
+    for (const rarity of GEAR_RARITIES) {
+        const display = rarityDisplay(rarity);
+        const row = document.createElement('label');
+        const enabled = document.createElement('input');
+        const threshold = document.createElement('input');
+
+        row.className = `gear-rule rarity-${display.tone}`;
+        row.dataset.gearRule = rarity;
+        enabled.type = 'checkbox';
+        enabled.className = 'gear-rule-enabled';
+        enabled.dataset.gearRuleEnabled = rarity;
+        enabled.setAttribute('aria-label', `启用${display.label}装备规则`);
+        threshold.type = 'number';
+        threshold.className = 'gear-rule-threshold';
+        threshold.dataset.gearRuleThreshold = rarity;
+        threshold.min = '0';
+        threshold.max = '100';
+        threshold.step = '1';
+        threshold.inputMode = 'numeric';
+        threshold.setAttribute(
+            'aria-label',
+            `${display.label}装备品质上限`,
+        );
+        row.append(
+            enabled,
+            createGearText(
+                'strong',
+                `gear-rule-rarity ${display.tone}`,
+                display.label,
+            ),
+            createGearText('span', 'gear-rule-quality-label', '品质 ≤'),
+            threshold,
+            createGearText('span', 'gear-rule-percent', '%'),
+        );
+        fragment.append(row);
+    }
+
+    elements['gear-rule-list'].append(fragment);
+}
+
+function renderGearRules() {
+    ensureGearRuleControls();
+
+    for (const rarity of GEAR_RARITIES) {
+        const rule = state.gearRules[rarity];
+        const enabled = elements['gear-rule-list'].querySelector(
+            `[data-gear-rule-enabled="${rarity}"]`,
+        );
+        const threshold = elements['gear-rule-list'].querySelector(
+            `[data-gear-rule-threshold="${rarity}"]`,
+        );
+
+        enabled.checked = rule.enabled;
+        enabled.disabled = state.gearBusy;
+        threshold.value = String(rule.maxQuality);
+        threshold.disabled = state.gearBusy || !rule.enabled;
+    }
+
+    const enabledCount = GEAR_RARITIES.filter(rarity =>
+        state.gearRules[rarity].enabled,
+    ).length;
+    const matches = gearRuleMatches();
+
+    elements['gear-rule-match-count'].textContent = enabledCount > 0
+        ? `命中 ${formatNumber(matches.length, 0)} 件可分解装备`
+        : '尚未启用规则';
+    elements['gear-select-rules'].disabled =
+        state.gearBusy || enabledCount === 0 || matches.length === 0;
+    elements['gear-rule-only'].disabled = state.gearBusy;
+}
+
 function filteredBackpackGears() {
     const search = value('gear-search').trim().toLowerCase();
     const slot = value('gear-slot-filter');
@@ -619,6 +944,10 @@ function filteredBackpackGears() {
     const sort = value('gear-sort');
     const gears = (state.gear?.gears || []).filter(gear => {
         if (gear.isEquipped) {
+            return false;
+        }
+
+        if (elements['gear-rule-only'].checked && !gearMatchesRule(gear)) {
             return false;
         }
 
@@ -684,10 +1013,13 @@ function renderBackpackGears() {
     const allBackpack = (state.gear?.gears || [])
         .filter(gear => !gear.isEquipped);
     const { filtered, pageCount, gears } = currentGearPage();
+    const equippedSlots = equippedGearSlots(state.gear?.gears || []);
     const fragment = document.createDocumentFragment();
 
     for (const gear of gears) {
-        fragment.append(createGearCard(gear));
+        fragment.append(createGearCard(gear, {
+            comparisonTargets: gearComparisonTargets(gear, equippedSlots),
+        }));
     }
 
     if (gears.length === 0) {
@@ -710,7 +1042,7 @@ function renderBackpackGears() {
     elements['gear-select-page'].disabled =
         state.gearBusy ||
         state.selectedGearIds.size >= GEAR_SALE_LIMIT ||
-        !gears.some(gear => !gear.isLocked);
+        !filtered.some(gear => !gear.isLocked);
     elements['gear-clear-selection'].disabled =
         state.gearBusy || state.selectedGearIds.size === 0;
     elements['gear-page-label'].textContent =
@@ -719,6 +1051,7 @@ function renderBackpackGears() {
         state.gearBusy || state.gearPage <= 1;
     elements['gear-page-next'].disabled =
         state.gearBusy || state.gearPage >= pageCount;
+    renderGearRules();
 }
 
 function renderGear() {
@@ -757,8 +1090,11 @@ function renderGear() {
     elements['gear-observed-at'].textContent =
         `更新于 ${formatDate(snapshot.observedAt)}`;
     for (const stat of ['strength', 'intelligence', 'luck', 'stamina']) {
-        elements[`gear-total-${stat}`].textContent =
-            `+${formatNumber(snapshot.equippedStats[stat], 0)}`;
+        const statElement = elements[`gear-total-${stat}`];
+        const statValue = Number(snapshot.equippedStats[stat]) || 0;
+
+        statElement.textContent = formatGearStat(statValue);
+        statElement.closest('div').hidden = statValue === 0;
     }
     renderEquippedGears(snapshot.gears);
     renderBackpackGears();
@@ -775,11 +1111,13 @@ async function loadGearInventory() {
 
     try {
         const snapshot = await api('/api/gears');
-        const currentIds = new Set(snapshot.gears.map(gear => gear.id));
+        const selectableIds = new Set(snapshot.gears
+            .filter(gear => !gear.isEquipped && !gear.isLocked)
+            .map(gear => gear.id));
 
         state.gear = snapshot;
         state.selectedGearIds = new Set(
-            [...state.selectedGearIds].filter(id => currentIds.has(id)),
+            [...state.selectedGearIds].filter(id => selectableIds.has(id)),
         );
     } catch (error) {
         state.gearError = error.message;
@@ -842,7 +1180,7 @@ async function sellSelectedGears() {
     if (selected.length === 0) {
         state.selectedGearIds.clear();
         renderGear();
-        showToast('当前选择中没有可出售的装备。', true);
+        showToast('当前选择中没有可分解的装备。', true);
         return;
     }
 
@@ -855,11 +1193,11 @@ async function sellSelectedGears() {
     );
     const message = [
         containsHighRarity ? '所选装备包含奇异或奥术装备。' : null,
-        `确认出售 ${selected.length} 件装备？`,
+        `确认分解 ${selected.length} 件装备？`,
         estimatedGold > 0
             ? `预计获得 ${formatNumber(estimatedGold, 0)} 金币。`
             : null,
-        '出售后无法撤销。',
+        '分解后无法撤销。',
     ].filter(Boolean).join('\n');
 
     if (!window.confirm(message)) {
@@ -879,7 +1217,7 @@ async function sellSelectedGears() {
         state.selectedGearIds.clear();
         applyGearSnapshot(snapshot);
         showToast(
-            `已出售 ${formatNumber(snapshot.sale?.gearsSold, 0)} 件装备，获得 ${formatNumber(snapshot.sale?.goldEarned, 0)} 金币。`,
+            `已分解 ${formatNumber(snapshot.sale?.gearsSold, 0)} 件装备，获得 ${formatNumber(snapshot.sale?.goldEarned, 0)} 金币。`,
         );
     } catch (error) {
         state.gearError = error.message;
@@ -2167,13 +2505,55 @@ elements['gear-backpack-grid'].addEventListener('click', event => {
     }
 });
 elements['gear-select-page'].addEventListener('click', () => {
-    for (const gear of currentGearPage().gears) {
+    const selectable = filteredBackpackGears().filter(gear => !gear.isLocked);
+
+    for (const gear of selectable) {
         if (
-            !gear.isLocked &&
             state.selectedGearIds.size < GEAR_SALE_LIMIT
         ) {
             state.selectedGearIds.add(gear.id);
         }
+    }
+    if (selectable.length > GEAR_SALE_LIMIT) {
+        showToast(`单次最多选择 ${GEAR_SALE_LIMIT} 件装备。`, true);
+    }
+    renderBackpackGears();
+});
+elements['gear-rule-list'].addEventListener('change', event => {
+    const enabled = event.target.closest('[data-gear-rule-enabled]');
+    const threshold = event.target.closest('[data-gear-rule-threshold]');
+
+    if (enabled) {
+        state.gearRules[enabled.dataset.gearRuleEnabled].enabled =
+            enabled.checked;
+    } else if (threshold) {
+        const rarity = threshold.dataset.gearRuleThreshold;
+
+        state.gearRules[rarity].maxQuality =
+            normalizeGearQualityThreshold(threshold.value);
+    } else {
+        return;
+    }
+
+    saveGearRules();
+    state.gearPage = 1;
+    renderBackpackGears();
+});
+elements['gear-rule-only'].addEventListener('change', () => {
+    state.gearPage = 1;
+    renderBackpackGears();
+});
+elements['gear-select-rules'].addEventListener('click', () => {
+    const matches = gearRuleMatches();
+
+    state.selectedGearIds = new Set(
+        matches.slice(0, GEAR_SALE_LIMIT).map(gear => gear.id),
+    );
+    if (matches.length > GEAR_SALE_LIMIT) {
+        showToast(
+            `规则命中 ${matches.length} 件，已选择前 ${GEAR_SALE_LIMIT} 件。`,
+            true,
+        );
     }
     renderBackpackGears();
 });

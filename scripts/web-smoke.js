@@ -117,8 +117,8 @@ function createFakeWorker() {
         },
         {
             id: 'gear-torso',
-            name: 'Driftweave Vest',
-            slot: 'torso',
+            name: 'Driftweave Hood',
+            slot: 'head',
             rarity: 'Common',
             quality: 24,
             upgradeLevel: 0,
@@ -806,8 +806,104 @@ try {
                 9,
             );
             assert.equal(
+                await page.locator('#gear-equipped-grid').evaluate(element =>
+                    getComputedStyle(element).gridTemplateColumns
+                        .split(' ')
+                        .length,
+                ),
+                5,
+            );
+            assert.equal(
+                await page.locator(
+                    '[data-gear-id="gear-head"] .gear-card-footer',
+                ).count(),
+                0,
+            );
+            assert.equal(
+                await page.locator(
+                    '[data-gear-id="gear-head"] .gear-card-title-line > *',
+                ).count(),
+                3,
+            );
+            assert.equal(
                 await page.locator('#gear-backpack-grid .gear-card').count(),
                 4,
+            );
+            assert.equal(
+                await page.locator('#gear-backpack-grid').evaluate(element =>
+                    getComputedStyle(element).gridTemplateColumns
+                        .split(' ')
+                        .length,
+                ),
+                4,
+            );
+            assert.equal(
+                await page.locator(
+                    '[data-gear-id="gear-head"] .gear-card-stats > div',
+                ).count(),
+                4,
+            );
+            assert.equal(
+                await page.locator(
+                    '[data-gear-id="gear-head"] .gear-card-stats > div:not(.gear-stat-empty)',
+                ).count(),
+                3,
+            );
+            assert.equal(
+                await page.locator(
+                    '[data-gear-id="gear-torso"] .gear-card-stats > div',
+                ).count(),
+                4,
+            );
+            assert.equal(
+                await page.locator(
+                    '[data-gear-id="gear-torso"] .gear-card-stats > div:not(.gear-stat-empty)',
+                ).count(),
+                2,
+            );
+            assert.equal(
+                await page.locator(
+                    '[data-gear-id="gear-torso"] .gear-comparison-changes > *',
+                ).count(),
+                4,
+            );
+            assert.equal(
+                await page.locator(
+                    '[data-gear-id="gear-torso"] .gear-comparison-empty[data-comparison="luck"]',
+                ).count(),
+                1,
+            );
+            assert.equal(
+                await page.locator(
+                    '[data-gear-id="gear-torso"] [data-comparison="strength"]',
+                ).textContent(),
+                '力量 -9',
+            );
+            assert.equal(
+                await page.locator(
+                    '[data-gear-id="gear-torso"] .gear-upgrade',
+                ).count(),
+                0,
+            );
+            assert.equal(
+                await page.locator(
+                    '[data-gear-id="gear-head"] .gear-name',
+                ).evaluate(element => getComputedStyle(element).color),
+                'rgb(168, 85, 247)',
+            );
+            assert.equal(
+                await page.locator(
+                    '[data-gear-id="gear-torso"] .gear-card-header > :last-child',
+                ).getAttribute('class'),
+                'gear-slot-badge',
+            );
+            assert.deepEqual(
+                await page.locator(
+                    '[data-gear-id="gear-torso"] .gear-card-subline > *',
+                ).evaluateAll(elements => elements.map(element =>
+                    element.className,
+                )),
+                ['gear-rarity common', 'gear-sell-value'],
             );
             assert.equal(
                 await page.locator(
@@ -836,11 +932,29 @@ try {
                 '+12',
             );
 
+            const commonRule = page.locator('[data-gear-rule="Common"]');
+
+            await commonRule.locator('[data-gear-rule-enabled]').check();
+            await commonRule.locator('[data-gear-rule-threshold]').fill('24');
+            await commonRule.locator('[data-gear-rule-threshold]').press('Tab');
+            assert.equal(
+                await page.locator('#gear-rule-match-count').textContent(),
+                '命中 1 件可分解装备',
+            );
+            await page.locator('#gear-rule-only').check();
+            assert.equal(
+                await page.locator('#gear-backpack-grid .gear-card').count(),
+                1,
+            );
+            await page.locator('#gear-rule-only').uncheck();
+            await page.locator('#gear-select-rules').click();
+            assert.equal(
+                await page.locator('#gear-selected-count').textContent(),
+                '已选择 1 件',
+            );
+
             await page.locator(
                 '[data-gear-id="gear-boots"] [data-gear-select]',
-            ).check();
-            await page.locator(
-                '[data-gear-id="gear-torso"] [data-gear-select]',
             ).check();
             assert.equal(
                 await page.locator('#gear-selected-count').textContent(),

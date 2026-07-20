@@ -173,64 +173,95 @@ h2 { margin-bottom: 16px; font-size: 15px; }
 .rarity-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .rarity-chip { display: inline-flex; gap: 7px; padding: 6px 9px; border: 1px solid transparent; border-radius: 7px; color: #cad3df; background: var(--panel-soft); font-size: 11px; }
 .rarity-chip strong { color: currentColor; }
-.rarity-chip.common { color: #cbd5e1; border-color: rgba(203, 213, 225, 0.18); }
-.rarity-chip.uncommon { color: #67e8a5; border-color: rgba(103, 232, 165, 0.2); background: rgba(34, 197, 94, 0.08); }
-.rarity-chip.fine { color: #67e8f9; border-color: rgba(103, 232, 249, 0.2); background: rgba(6, 182, 212, 0.08); }
-.rarity-chip.rare { color: #7db5ff; border-color: rgba(96, 165, 250, 0.22); background: rgba(59, 130, 246, 0.09); }
-.rarity-chip.epic { color: #a5a7ff; border-color: rgba(129, 140, 248, 0.22); background: rgba(99, 102, 241, 0.09); }
-.rarity-chip.legendary { color: #ffb15e; border-color: rgba(251, 146, 60, 0.24); background: rgba(249, 115, 22, 0.09); }
-.rarity-chip.mythic { color: #d29aff; border-color: rgba(192, 132, 252, 0.24); background: rgba(168, 85, 247, 0.09); }
-.rarity-chip.exotic { color: #ff93cf; border-color: rgba(244, 114, 182, 0.24); background: rgba(236, 72, 153, 0.09); }
-.rarity-chip.arcane { color: #ffe06b; border-color: rgba(250, 204, 21, 0.26); background: rgba(234, 179, 8, 0.09); }
+.rarity-chip.common { color: #9ca3af; border-color: rgba(156, 163, 175, 0.28); }
+.rarity-chip.uncommon { color: #84cc16; border-color: rgba(132, 204, 22, 0.3); background: rgba(132, 204, 22, 0.08); }
+.rarity-chip.fine { color: #3b82f6; border-color: rgba(59, 130, 246, 0.32); background: rgba(59, 130, 246, 0.09); }
+.rarity-chip.rare { color: #a855f7; border-color: rgba(168, 85, 247, 0.34); background: rgba(168, 85, 247, 0.09); }
+.rarity-chip.epic { color: #ec4899; border-color: rgba(236, 72, 153, 0.34); background: rgba(236, 72, 153, 0.09); }
+.rarity-chip.legendary { color: #f59e0b; border-color: rgba(245, 158, 11, 0.34); background: rgba(245, 158, 11, 0.09); }
+.rarity-chip.mythic { color: #ef4444; border-color: rgba(239, 68, 68, 0.34); background: rgba(239, 68, 68, 0.09); }
+.rarity-chip.exotic { color: #67e8f9; border-color: #8b5cf6; background: linear-gradient(135deg, rgba(6, 182, 212, 0.15), rgba(139, 92, 246, 0.15)); }
+.rarity-chip.arcane { color: #f9a8d4; border-color: #ec4899; background: linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(236, 72, 153, 0.15) 50%, rgba(245, 158, 11, 0.15)); }
 .rarity-chip.relic { color: #d8b4fe; border-color: rgba(216, 180, 254, 0.22); background: rgba(147, 51, 234, 0.08); }
 .rarity-chip.treasure { color: #fbd06d; border-color: rgba(251, 208, 109, 0.23); background: rgba(202, 138, 4, 0.09); }
 .rarity-chip.gear { color: #f1f5f9; border-color: rgba(241, 245, 249, 0.2); background: rgba(100, 116, 139, 0.11); }
 .rarity-chip.unknown { color: var(--muted); }
 
-.gear-equipped-panel, .gear-backpack-panel { padding: 18px; }
-.gear-equipped-panel { margin-bottom: 12px; }
+.gear-equipped-panel, .gear-backpack-panel { padding: 14px; }
+.gear-equipped-panel { margin-bottom: 10px; }
 .gear-equipped-panel .section-heading-row h2 { margin-bottom: 0; }
-.gear-stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 17px 0; }
-.gear-stat-grid > div { display: grid; gap: 7px; padding: 10px 12px; border-radius: 9px; background: var(--panel-soft); }
+.gear-stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 10px 0; }
+.gear-stat-grid > div { display: flex; align-items: baseline; justify-content: space-between; gap: 7px; padding: 7px 9px; border-radius: 7px; background: var(--panel-soft); }
 .gear-stat-grid dt { color: var(--muted); font-size: 10px; }
-.gear-stat-grid dd { margin: 0; color: var(--accent); font-size: 17px; font-weight: 800; }
-.gear-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.gear-card { min-width: 0; padding: 13px; border: 1px solid rgba(148, 163, 184, 0.16); border-left-width: 3px; border-radius: 10px; background: var(--panel-soft); }
-.gear-card.rarity-common { border-left-color: #cbd5e1; }
-.gear-card.rarity-uncommon { border-left-color: #67e8a5; }
-.gear-card.rarity-fine { border-left-color: #67e8f9; }
-.gear-card.rarity-rare { border-left-color: #7db5ff; }
-.gear-card.rarity-epic { border-left-color: #a5a7ff; }
-.gear-card.rarity-legendary { border-left-color: #ffb15e; }
-.gear-card.rarity-mythic { border-left-color: #d29aff; }
-.gear-card.rarity-exotic { border-left-color: #ff93cf; }
-.gear-card.rarity-arcane { border-left-color: #ffe06b; }
+.gear-stat-grid dd { margin: 0; color: var(--accent); font-size: 15px; font-weight: 800; }
+.gear-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.equipped-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.backpack-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: start; gap: 7px; }
+.gear-card { min-width: 0; padding: 13px; border: 2px solid rgba(148, 163, 184, 0.16); border-radius: 10px; background: var(--panel-soft); transition: border-color 120ms ease, box-shadow 120ms ease; }
+.gear-card.rarity-common { border-color: #9ca3af; background: linear-gradient(135deg, rgba(156, 163, 175, 0.07), transparent 45%), var(--panel-soft); }
+.gear-card.rarity-uncommon { border-color: #84cc16; background: linear-gradient(135deg, rgba(132, 204, 22, 0.07), transparent 45%), var(--panel-soft); }
+.gear-card.rarity-fine { border-color: #3b82f6; background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), transparent 45%), var(--panel-soft); }
+.gear-card.rarity-rare { border-color: #a855f7; background: linear-gradient(135deg, rgba(168, 85, 247, 0.08), transparent 45%), var(--panel-soft); }
+.gear-card.rarity-epic { border-color: #ec4899; background: linear-gradient(135deg, rgba(236, 72, 153, 0.08), transparent 45%), var(--panel-soft); }
+.gear-card.rarity-legendary { border-color: #f59e0b; background: linear-gradient(135deg, rgba(245, 158, 11, 0.08), transparent 45%), var(--panel-soft); }
+.gear-card.rarity-mythic { border-color: #ef4444; background: linear-gradient(135deg, rgba(239, 68, 68, 0.08), transparent 45%), var(--panel-soft); }
+.gear-card.rarity-exotic { border-color: transparent; background: linear-gradient(var(--panel-soft), var(--panel-soft)) padding-box, linear-gradient(135deg, #06b6d4, #8b5cf6) border-box; }
+.gear-card.rarity-arcane { border-color: transparent; background: linear-gradient(var(--panel-soft), var(--panel-soft)) padding-box, linear-gradient(135deg, #a855f7, #ec4899 50%, #f59e0b) border-box; }
+.gear-card.selected { box-shadow: 0 0 0 2px #3b82f6, 0 10px 28px rgba(0, 0, 0, 0.22); }
 .gear-card.locked { opacity: 0.72; }
-.gear-card-header { min-height: 38px; display: flex; align-items: flex-start; gap: 9px; }
-.gear-card-title { min-width: 0; display: grid; gap: 3px; }
-.gear-name { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.gear-rarity { font-size: 10px; }
-.gear-rarity.common { color: #cbd5e1; }
-.gear-rarity.uncommon { color: #67e8a5; }
-.gear-rarity.fine { color: #67e8f9; }
-.gear-rarity.rare { color: #7db5ff; }
-.gear-rarity.epic { color: #a5a7ff; }
-.gear-rarity.legendary { color: #ffb15e; }
-.gear-rarity.mythic { color: #d29aff; }
-.gear-rarity.exotic { color: #ff93cf; }
-.gear-rarity.arcane { color: #ffe06b; }
-.gear-meta { margin: 8px 0; color: var(--muted); font-size: 10px; }
-.gear-card-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; margin: 0 0 11px; }
-.gear-card-stats > div { display: grid; gap: 2px; padding: 6px; border-radius: 6px; background: rgba(148, 163, 184, 0.06); }
-.gear-card-stats dt { color: var(--muted); font-size: 9px; }
-.gear-card-stats dd { margin: 0; font-size: 11px; font-weight: 750; }
-.gear-card-footer { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.gear-card-header { min-height: 0; display: flex; align-items: flex-start; gap: 8px; }
+.gear-card-title { min-width: 0; flex: 1 1 auto; display: grid; gap: 3px; }
+.gear-card-title-line { min-width: 0; display: flex; align-items: baseline; gap: 7px; }
+.gear-name { min-width: 0; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.gear-card-title-line .gear-quality { flex: 0 0 auto; }
+.gear-card-subline { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; min-height: 14px; }
+.gear-slot-badge { flex: 0 0 auto; color: #aab4c2; font-size: 10px; white-space: nowrap; }
+.gear-rarity { font-size: 10px; font-weight: 750; }
+.gear-name.common, .gear-rarity.common, .gear-rule-rarity.common { color: #9ca3af; }
+.gear-name.uncommon, .gear-rarity.uncommon, .gear-rule-rarity.uncommon { color: #84cc16; }
+.gear-name.fine, .gear-rarity.fine, .gear-rule-rarity.fine { color: #3b82f6; }
+.gear-name.rare, .gear-rarity.rare, .gear-rule-rarity.rare { color: #a855f7; }
+.gear-name.epic, .gear-rarity.epic, .gear-rule-rarity.epic { color: #ec4899; }
+.gear-name.legendary, .gear-rarity.legendary, .gear-rule-rarity.legendary { color: #f59e0b; }
+.gear-name.mythic, .gear-rarity.mythic, .gear-rule-rarity.mythic { color: #ef4444; }
+.gear-name.exotic, .gear-rarity.exotic, .gear-rule-rarity.exotic { color: transparent; background: linear-gradient(135deg, #06b6d4, #8b5cf6); background-clip: text; -webkit-background-clip: text; }
+.gear-name.arcane, .gear-rarity.arcane, .gear-rule-rarity.arcane { color: transparent; background: linear-gradient(135deg, #a855f7, #ec4899 50%, #f59e0b); background-clip: text; -webkit-background-clip: text; }
+.gear-quality { font-size: 11px; }
+.gear-quality.excellent { color: #ffd700; }
+.gear-quality.good { color: #00ff00; }
+.gear-quality.fair { color: #ffff00; }
+.gear-quality.low { color: #ff4444; }
+.gear-upgrade { color: #dbeafe; font-size: 10px; font-weight: 750; }
+.gear-card-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin: 7px 0 0; }
+.gear-card-stats > div { min-width: 0; min-height: 26px; display: flex; align-items: baseline; justify-content: space-between; gap: 3px; padding: 5px 6px; border-radius: 5px; background: rgba(148, 163, 184, 0.07); }
+.gear-card-stats dt { color: var(--muted); font-size: 9px; white-space: nowrap; }
+.gear-card-stats dd { margin: 0; color: #e5e7eb; font-size: 11px; font-weight: 800; }
+.gear-card-stats .gear-stat-empty { background: transparent; }
+.gear-comparisons { display: grid; gap: 3px; margin-top: 4px; }
+.gear-comparison { margin: 0; padding: 0; }
+.gear-comparison-title { display: none; color: #93c5fd; font-size: 9px; }
+.gear-comparison[data-comparison-slot^="ring_"] .gear-comparison-title { display: block; margin: 3px 0 2px; }
+.gear-comparison-changes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.gear-comparison-change, .gear-comparison-empty { min-width: 0; min-height: 24px; display: flex; align-items: baseline; justify-content: space-between; gap: 3px; padding: 4px 6px; border-radius: 5px; background: rgba(0, 0, 0, 0.2); font-size: 9px; }
+.gear-comparison-empty { background: transparent; }
+.gear-comparison-change.positive { color: #00ff00; }
+.gear-comparison-change.negative { color: #ff4444; }
+.gear-comparison-same { grid-column: 1 / -1; min-height: 24px; display: flex; align-items: center; padding: 4px 6px; color: var(--muted); font-size: 9px; }
+.gear-card-footer { min-height: 27px; display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 5px; }
 .gear-sell-value { color: var(--warning); font-size: 9px; }
 .gear-equipped-mark { color: var(--accent); font-size: 10px; font-weight: 750; }
 .gear-locked-mark { color: var(--warning); font-size: 10px; font-weight: 750; }
 .gear-equip-actions { display: flex; justify-content: flex-end; gap: 5px; }
-.gear-equip-actions .button { min-height: 29px; padding: 4px 7px; font-size: 9px; }
-.gear-card.empty-slot { min-height: 153px; display: grid; place-items: center; align-content: center; gap: 7px; border-left-width: 1px; color: #b7c0cc; }
+.gear-equip-actions .button { min-height: 25px; padding: 3px 7px; font-size: 9px; }
+.backpack-grid .gear-card { padding: 8px; border-radius: 8px; }
+.backpack-grid .gear-equip-actions { flex-wrap: wrap; }
+.equipped-grid .gear-card { padding: 8px; }
+.equipped-grid .gear-card-subline { min-height: 12px; }
+.equipped-grid .gear-card-stats { margin-bottom: 0; }
+.equipped-grid .gear-card-stats > div { gap: 2px; padding: 4px 3px; }
+.equipped-grid .gear-card-stats dt { font-size: 8px; }
+.equipped-grid .gear-card-stats dd { font-size: 10px; }
+.gear-card.empty-slot { min-height: 92px; display: grid; place-items: center; align-content: center; gap: 4px; border-width: 1px; color: #b7c0cc; }
 .gear-empty-icon { font-size: 23px; filter: grayscale(0.6); opacity: 0.65; }
 .gear-card.empty-slot .muted { font-size: 10px; }
 .gear-backpack-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 15px; }
@@ -240,6 +271,29 @@ h2 { margin-bottom: 16px; font-size: 15px; }
 .gear-filters { display: grid; grid-template-columns: minmax(180px, 1.5fr) repeat(3, minmax(125px, 1fr)); gap: 9px; margin-bottom: 14px; padding: 11px; border-radius: 9px; background: var(--panel-soft); }
 .gear-filters label { gap: 5px; font-size: 10px; }
 .gear-filters input, .gear-filters select { min-height: 33px; font-size: 11px; }
+.gear-rule-panel { margin-bottom: 14px; padding: 12px; border: 1px solid rgba(96, 165, 250, 0.16); border-radius: 9px; background: rgba(15, 23, 42, 0.62); }
+.gear-rule-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 10px; }
+.gear-rule-heading > div:first-child { display: grid; gap: 4px; }
+.gear-rule-heading strong { font-size: 12px; }
+.gear-rule-heading span { color: var(--muted); font-size: 10px; line-height: 1.45; }
+.gear-rule-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.gear-rule-only { display: inline-flex; align-items: center; flex-direction: row; gap: 6px; color: #cbd5e1; font-size: 10px; white-space: nowrap; }
+.gear-rule-only input { width: 15px; min-height: 15px; height: 15px; margin: 0; accent-color: #3b82f6; }
+.gear-rule-list { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.gear-rule { display: flex; align-items: center; min-width: 0; min-height: 38px; flex-direction: row; gap: 6px; padding: 6px 8px; border: 1px solid rgba(148, 163, 184, 0.14); border-left-width: 3px; border-radius: 7px; background: rgba(2, 6, 23, 0.3); }
+.gear-rule.rarity-common { border-left-color: #9ca3af; }
+.gear-rule.rarity-uncommon { border-left-color: #84cc16; }
+.gear-rule.rarity-fine { border-left-color: #3b82f6; }
+.gear-rule.rarity-rare { border-left-color: #a855f7; }
+.gear-rule.rarity-epic { border-left-color: #ec4899; }
+.gear-rule.rarity-legendary { border-left-color: #f59e0b; }
+.gear-rule.rarity-mythic { border-left-color: #ef4444; }
+.gear-rule.rarity-exotic { border-left-color: #8b5cf6; }
+.gear-rule.rarity-arcane { border-left-color: #ec4899; }
+.gear-rule-enabled { width: 15px; min-height: 15px; height: 15px; flex: 0 0 auto; margin: 0; accent-color: #3b82f6; }
+.gear-rule-rarity { min-width: 32px; font-size: 10px; }
+.gear-rule-quality-label, .gear-rule-percent { color: var(--muted); font-size: 9px; white-space: nowrap; }
+.gear-rule-threshold { width: 52px; min-height: 27px; margin-left: auto; padding: 3px 5px; text-align: right; font-size: 10px; }
 .gear-empty-state { grid-column: 1 / -1; }
 .gear-pagination { display: flex; align-items: center; justify-content: center; gap: 11px; margin-top: 14px; }
 .gear-pagination .muted { min-width: 85px; text-align: center; font-size: 10px; }
@@ -278,6 +332,8 @@ input[type="checkbox"] { position: relative; width: 38px; min-height: 21px; heig
 input[type="checkbox"]::after { position: absolute; width: 15px; height: 15px; top: 2px; left: 3px; border-radius: 50%; background: #718096; content: ""; transition: 150ms; }
 input[type="checkbox"]:checked { border-color: var(--accent-strong); background: rgba(57, 189, 132, 0.22); }
 input[type="checkbox"]:checked::after { left: 18px; background: var(--accent); }
+input[type="checkbox"].gear-rule-enabled, input[type="checkbox"]#gear-rule-only { position: static; width: 15px; min-height: 15px; height: 15px; padding: 0; appearance: auto; border-radius: 3px; accent-color: #3b82f6; }
+input[type="checkbox"].gear-rule-enabled::after, input[type="checkbox"]#gear-rule-only::after { display: none; }
 .toggle-row { min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 
 .settings-view { width: min(820px, 100%); margin: 0 auto; }
@@ -301,7 +357,9 @@ summary { padding: 14px 15px; cursor: pointer; font-size: 13px; font-weight: 700
     .kpi-grid, .stats-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .log-context-grid { grid-template-columns: 1fr; }
     .gear-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .equipped-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .gear-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .gear-rule-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 600px) {
@@ -313,9 +371,12 @@ summary { padding: 14px 15px; cursor: pointer; font-size: 13px; font-weight: 700
     .control-actions { width: 100%; }
     .control-actions .button { flex: 1; }
     .overview-grid, .stats-layout, .form-grid { grid-template-columns: 1fr; }
-    .gear-stat-grid, .gear-grid, .gear-filters { grid-template-columns: 1fr; }
+    .gear-stat-grid, .gear-grid, .gear-filters, .gear-rule-list { grid-template-columns: 1fr; }
+    .equipped-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .gear-backpack-heading { align-items: stretch; flex-direction: column; }
     .gear-selection-actions { justify-content: flex-start; }
+    .gear-rule-heading { align-items: stretch; flex-direction: column; }
+    .gear-rule-actions { justify-content: flex-start; }
     .detail-list.compact { grid-template-columns: 1fr; }
     .progress-meta { align-items: flex-start; flex-direction: column; gap: 5px; }
     .settings-form, .login-card { padding: 17px; }
